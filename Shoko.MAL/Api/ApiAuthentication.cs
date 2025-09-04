@@ -1,0 +1,156 @@
+﻿using Microsoft.Extensions.Logging;
+using Shoko.AniSync.Configuration;
+using Shoko.AniSync.Models;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Security.Authentication;
+using System.Text;
+using System.Text.Json;
+using System.Threading.Tasks;
+
+namespace Shoko.AniSync.Api
+{
+    public class ApiAuthentication
+    {
+        private ApiName _provider;
+        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly ILoggerFactory _loggerFactory;
+        private readonly ILogger<ApiAuthentication> _logger;
+        private readonly ProviderApiAuth _providerApiAuth;
+        private readonly string _authApiUrl;
+        private readonly string _redirectUrl;
+        private static readonly string _codeChallenge = GenerateCodeChallenge();
+
+        private readonly string _clientId = "cb2cb041c1452a990a065d5e7ecdf89b";
+        private readonly string _clientSecret = "REDACTED";
+
+        public ApiAuthentication(ApiName provider, IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory)
+        {
+            _provider = provider;
+            _httpClientFactory = httpClientFactory;
+            _loggerFactory = loggerFactory;
+            _logger = _loggerFactory.CreateLogger<ApiAuthentication>();
+
+            _providerApiAuth =  new ProviderApiAuth()
+            {
+                Name = provider,
+                ClientId = _clientId,
+                ClientSecret = _clientSecret
+            };
+
+            // TODO: Add support for other providers
+            _authApiUrl = provider switch
+            {
+                ApiName.Mal => "https://myanimelist.net/v1/oauth2",
+                _ => throw new ArgumentOutOfRangeException(nameof(provider), provider, null),
+            };
+            _redirectUrl = "http://localhost:8111/AniSync/authCallback";
+        }
+
+        public string BuildAuthorizeRequestUrl()
+        {
+            switch (_provider)
+            {
+                case ApiName.Mal:
+                    return $"{_authApiUrl}/authorize?response_type=code&client_id={_providerApiAuth.ClientId}&code_challenge={_codeChallenge}&redirect_uri={_redirectUrl}";
+                default:
+                    throw new ArgumentOutOfRangeException();
+            }
+        }
+
+        public UserApiAuth GetToken(string? code = null, string? refreshToken = null)
+        {
+            var client = _httpClientFactory.CreateClient();
+
+            HttpContent formUrlEncodedContent;
+
+            if (refreshToken != null)
+            {
+                formUrlEncodedContent = new FormUrlEncodedContent(new[] {
+                        new KeyValuePair<string, string>("client_id", _providerApiAuth.ClientId),
+                        new KeyValuePair<string, string>("client_secret", _providerApiAuth.ClientSecret),
+                        new KeyValuePair<string, string>("grant_type", "refresh_token"),
+                        new KeyValuePair<string, string>("refresh_token", refreshToken)
+                    });
+            }
+            else
+            {
+                List<KeyValuePair<string, string>> content = new List<KeyValuePair<string, string>>() {
+                        new KeyValuePair<string, string>("client_id", _providerApiAuth.ClientId),
+                        new KeyValuePair<string, string>("client_secret", _providerApiAuth.ClientSecret),
+                        new KeyValuePair<string, string>("code", code),
+                        new KeyValuePair<string, string>("grant_type", "authorization_code"),
+                        new KeyValuePair<string, string>("redirect_uri", _redirectUrl)
+                    };
+                if (_provider == ApiName.Mal)
+                {
+                    content.Add(new KeyValuePair<string, string>("code_verifier", _codeChallenge));
+                }
+                var dict = content.ToDictionary(k => k.Key, v => v.Value);
+                _logger.LogInformation("Requesting token from {Url} with form fields: {@Fields}",
+                                       $"{_authApiUrl}/token", dict);
+                formUrlEncodedContent = new FormUrlEncodedContent(content.ToArray());
+            }
+
+            var response = client.PostAsync(new Uri($"{_authApiUrl}/token"), formUrlEncodedContent).Result;
+
+            if (response.IsSuccessStatusCode)
+            {
+                var content = response.Content.ReadAsStream();
+
+                StreamReader streamReader = new StreamReader(content);
+
+                TokenResponse tokenResponse = JsonSerializer.Deserialize<TokenResponse>(streamReader.ReadToEnd());
+
+                Config? pluginConfig = Plugin.Instance.Config;
+                if (pluginConfig != null)
+                {
+                    var apiAuth = pluginConfig.UserApiAuth?.FirstOrDefault(item => item.Name == _provider);
+
+                    UserApiAuth newUserApiAuth = new UserApiAuth
+                    {
+                        Name = _provider,
+                        AccessToken = tokenResponse.access_token
+                    };
+
+                    if (_provider is ApiName.Mal)
+                    {
+                        newUserApiAuth.RefreshToken = tokenResponse.refresh_token;
+                    }
+
+                    if (apiAuth != null)
+                    {
+                        apiAuth.AccessToken = tokenResponse.access_token;
+                        if (_provider is ApiName.Mal)
+                        {
+                            apiAuth.RefreshToken = tokenResponse.refresh_token;
+                        }
+                    }
+                    else
+                    {
+                        var apiAuthList = pluginConfig.UserApiAuth!.ToList();
+                        apiAuthList.Add(newUserApiAuth);
+                        pluginConfig.UserApiAuth = [.. apiAuthList];
+                    }
+
+                    pluginConfig.Save();
+                    return newUserApiAuth;
+                }
+            }
+
+            throw new AuthenticationException($"Could not retrieve {_provider} token: " + response.StatusCode + " - " + response.ReasonPhrase);
+        }
+
+        private static string GenerateCodeChallenge()
+        {
+            return new string((from s in Enumerable.Repeat("AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz0123456789-._~", 128)
+                               select s[Random.Shared.Next(s.Length)]).ToArray());
+        }
+    }
+    public class TokenResponse
+    {
+        public string access_token { get; set; }
+        public string refresh_token { get; set; }
+    }
+}
