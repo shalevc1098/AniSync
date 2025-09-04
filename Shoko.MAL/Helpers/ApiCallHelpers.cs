@@ -1,0 +1,551 @@
+﻿using Microsoft.AspNetCore.Mvc.Formatters;
+using Shoko.AniSync.Api;
+using Shoko.AniSync.Interfaces;
+using Shoko.AniSync.Models.Mal;
+using Shoko.Plugin.Abstractions.DataModels;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace Shoko.AniSync.Helpers
+{
+    public class ApiCallHelpers : IApiCallHelpers
+    {
+        private MalApiCalls _malApiCalls;
+        //private AniListApiCalls _aniListApiCalls;
+        //private KitsuApiCalls _kitsuApiCalls;
+        //private AnnictApiCalls _annictApiCalls;
+        //private ShikimoriApiCalls _shikimoriApiCalls;
+        //private SimklApiCalls _simklApiCalls;
+
+        public ApiCallHelpers(MalApiCalls malApiCalls = null/*,
+            AniListApiCalls aniListApiCalls = null,
+            KitsuApiCalls kitsuApiCalls = null,
+            AnnictApiCalls annictApiCalls = null,
+            ShikimoriApiCalls shikimoriApiCalls = null,
+            SimklApiCalls simklApiCalls = null*/)
+        {
+            //_annictApiCalls = annictApiCalls;
+            //_shikimoriApiCalls = shikimoriApiCalls;
+            _malApiCalls = malApiCalls;
+            //_aniListApiCalls = aniListApiCalls;
+            //_kitsuApiCalls = kitsuApiCalls;
+            //_simklApiCalls = simklApiCalls;
+        }
+
+        public async Task<List<Anime>> SearchAnime(string query)
+        {
+            bool updateNsfw = Plugin.Instance!.Config.UpdateNsfw;
+            if (_malApiCalls != null)
+            {
+                // TODO: if not using "status" and "num_episodes", remove
+                return await _malApiCalls.SearchAnime(query, new[] { "id", "title", "alternative_titles", "num_episodes", "status", "start_date" }, updateNsfw);
+            }
+
+            //if (_aniListApiCalls != null)
+            //{
+            //    List<AniListSearch.Media> animeList = await _aniListApiCalls.SearchAnime(query);
+
+            //    return AniListSearchAnimeConvertedList(animeList, updateNsfw);
+            //}
+
+            //if (_kitsuApiCalls != null)
+            //{
+            //    List<KitsuSearch.KitsuAnime> animeList = await _kitsuApiCalls.SearchAnime(query);
+
+            //    return KitsuSearchAnimeConvertedList(animeList);
+            //}
+
+            //if (_annictApiCalls != null)
+            //{
+            //    List<AnnictSearch.AnnictAnime> animeList = await _annictApiCalls.SearchAnime(query);
+
+            //    return AnnictSearchAnimeConvertedList(animeList);
+            //}
+
+            //if (_shikimoriApiCalls != null)
+            //{
+            //    List<ShikimoriAnime> animeList = await _shikimoriApiCalls.SearchAnime(query);
+
+            //    return ShikimoriSearchAnimeConvertedList(animeList, updateNsfw);
+            //}
+
+            return null;
+        }
+
+        public async Task<Anime> GetAnime(int id, string? alternativeId = null, bool getRelated = false)
+        {
+            if (_malApiCalls != null)
+            {
+                return await _malApiCalls.GetAnime(id, new[] { "title", "related_anime", "my_list_status", "num_episodes" });
+            }
+
+            //if (_aniListApiCalls != null)
+            //{
+            //    AniListSearch.Media anime = await _aniListApiCalls.GetAnime(id);
+            //    if (anime == null) return null;
+
+            //    return ClassConversions.ConvertAniListAnime(anime);
+            //}
+
+            //if (_kitsuApiCalls != null)
+            //{
+            //    KitsuGet.KitsuGetAnime anime = await _kitsuApiCalls.GetAnime(id);
+            //    if (anime == null) return null;
+            //    Anime convertedAnime = ClassConversions.ConvertKitsuAnime(anime.KitsuAnimeData);
+
+            //    convertedAnime.MyListStatus = await GetConvertedKitsuUserList(id);
+
+            //    return convertedAnime;
+            //}
+
+            //if (_annictApiCalls != null && alternativeId != null)
+            //{
+            //    var anime = await _annictApiCalls.GetAnime(alternativeId);
+            //    if (anime == null) return null;
+            //    return ClassConversions.ConvertAnnictAnime(anime);
+            //}
+
+            //if (_shikimoriApiCalls != null && alternativeId != null)
+            //{
+            //    var anime = await _shikimoriApiCalls.GetAnime(alternativeId, getRelated);
+            //    if (anime == null) return null;
+
+            //    return ClassConversions.ConvertShikimoriAnime(anime);
+            //}
+
+            return null;
+        }
+
+        public async Task<UpdateAnimeStatusResponse> UpdateAnime(int animeId, int numberOfWatchedEpisodes, Status status,
+            bool? isRewatching = null, int? numberOfTimesRewatched = null, DateTime? startDate = null, DateTime? endDate = null, string alternativeId = null, AnimeOfflineDatabaseHelpers.OfflineDatabaseResponse ids = null, bool? isShow = null)
+        {
+            if (_malApiCalls != null)
+            {
+                return await _malApiCalls.UpdateAnimeStatus(animeId, numberOfWatchedEpisodes, status, isRewatching, numberOfTimesRewatched, startDate, endDate);
+            }
+
+            //if (_aniListApiCalls != null)
+            //{
+            //    AniListSearch.MediaListStatus anilistStatus;
+            //    switch (status)
+            //    {
+            //        case Status.Watching:
+            //            anilistStatus = AniListSearch.MediaListStatus.Current;
+            //            break;
+            //        case Status.Completed:
+            //            anilistStatus = isRewatching != null && isRewatching.Value ? AniListSearch.MediaListStatus.Repeating : AniListSearch.MediaListStatus.Completed;
+            //            break;
+            //        case Status.On_hold:
+            //            anilistStatus = AniListSearch.MediaListStatus.Paused;
+            //            break;
+            //        case Status.Dropped:
+            //            anilistStatus = AniListSearch.MediaListStatus.Dropped;
+            //            break;
+            //        case Status.Plan_to_watch:
+            //            anilistStatus = AniListSearch.MediaListStatus.Planning;
+            //            break;
+            //        case Status.Rewatching:
+            //            anilistStatus = AniListSearch.MediaListStatus.Repeating;
+            //            break;
+            //        default:
+            //            anilistStatus = AniListSearch.MediaListStatus.Current;
+            //            break;
+            //    }
+
+            //    if (await _aniListApiCalls.UpdateAnime(animeId, anilistStatus, numberOfWatchedEpisodes, numberOfTimesRewatched, startDate, endDate))
+            //    {
+            //        return new UpdateAnimeStatusResponse();
+            //    }
+            //}
+
+            //if (_kitsuApiCalls != null)
+            //{
+            //    KitsuUpdate.Status kitsuStatus;
+
+            //    switch (status)
+            //    {
+            //        case Status.Watching:
+            //            kitsuStatus = KitsuUpdate.Status.current;
+            //            break;
+            //        case Status.Completed:
+            //        case Status.Rewatching:
+            //            kitsuStatus = isRewatching != null && isRewatching.Value ? KitsuUpdate.Status.current : KitsuUpdate.Status.completed;
+            //            break;
+            //        case Status.On_hold:
+            //            kitsuStatus = KitsuUpdate.Status.on_hold;
+            //            break;
+            //        case Status.Dropped:
+            //            kitsuStatus = KitsuUpdate.Status.dropped;
+            //            break;
+            //        case Status.Plan_to_watch:
+            //            kitsuStatus = KitsuUpdate.Status.planned;
+            //            break;
+            //        default:
+            //            kitsuStatus = KitsuUpdate.Status.current;
+            //            break;
+            //    }
+
+            //    if (await _kitsuApiCalls.UpdateAnimeStatus(animeId, numberOfWatchedEpisodes, kitsuStatus, isRewatching, numberOfTimesRewatched, startDate, endDate))
+            //    {
+            //        return new UpdateAnimeStatusResponse();
+            //    }
+            //}
+
+            //if (_annictApiCalls != null && alternativeId != null)
+            //{
+            //    AnnictSearch.AnnictMediaStatus annictMediaStatus;
+
+            //    switch (status)
+            //    {
+            //        case Status.Watching:
+            //            annictMediaStatus = AnnictSearch.AnnictMediaStatus.Watching;
+            //            break;
+            //        case Status.Completed:
+            //        case Status.Rewatching:
+            //            annictMediaStatus = AnnictSearch.AnnictMediaStatus.Watched;
+            //            break;
+            //        case Status.On_hold:
+            //            annictMediaStatus = AnnictSearch.AnnictMediaStatus.On_hold;
+            //            break;
+            //        case Status.Dropped:
+            //            annictMediaStatus = AnnictSearch.AnnictMediaStatus.Stop_watching;
+            //            break;
+            //        case Status.Plan_to_watch:
+            //            annictMediaStatus = AnnictSearch.AnnictMediaStatus.Wanna_watch;
+            //            break;
+            //        default:
+            //            annictMediaStatus = AnnictSearch.AnnictMediaStatus.No_state;
+            //            break;
+            //    }
+
+            //    if (await _annictApiCalls.UpdateAnime(alternativeId, annictMediaStatus))
+            //        return new UpdateAnimeStatusResponse();
+            //}
+
+            //if (_shikimoriApiCalls != null && alternativeId != null)
+            //{
+            //    ShikimoriUserRate.StatusEnum shikimoriUpdateStatus;
+
+            //    switch (status)
+            //    {
+            //        case Status.Watching:
+            //            shikimoriUpdateStatus = ShikimoriUserRate.StatusEnum.watching;
+            //            break;
+            //        case Status.Completed:
+            //            shikimoriUpdateStatus = ShikimoriUserRate.StatusEnum.completed;
+            //            break;
+            //        case Status.Rewatching:
+            //            shikimoriUpdateStatus = ShikimoriUserRate.StatusEnum.rewatching;
+            //            break;
+            //        case Status.On_hold:
+            //            shikimoriUpdateStatus = ShikimoriUserRate.StatusEnum.on_hold;
+            //            break;
+            //        case Status.Dropped:
+            //            shikimoriUpdateStatus = ShikimoriUserRate.StatusEnum.dropped;
+            //            break;
+            //        case Status.Plan_to_watch:
+            //            shikimoriUpdateStatus = ShikimoriUserRate.StatusEnum.planned;
+            //            break;
+            //        default:
+            //            shikimoriUpdateStatus = ShikimoriUserRate.StatusEnum.watching;
+            //            break;
+            //    }
+
+            //    if (await _shikimoriApiCalls.UpdateAnime(alternativeId, shikimoriUpdateStatus, numberOfWatchedEpisodes, numberOfTimesRewatched))
+            //    {
+            //        return new UpdateAnimeStatusResponse();
+            //    }
+            //}
+
+            //if (_simklApiCalls != null && isShow != null && ids != null)
+            //{
+            //    SimklStatus simklStatus;
+
+            //    switch (status)
+            //    {
+            //        case Status.Completed:
+            //            simklStatus = SimklStatus.completed;
+            //            break;
+            //        case Status.Dropped:
+            //            simklStatus = SimklStatus.dropped;
+            //            break;
+            //        case Status.On_hold:
+            //            simklStatus = SimklStatus.hold;
+            //            break;
+            //        case Status.Plan_to_watch:
+            //            simklStatus = SimklStatus.plantowatch;
+            //            break;
+            //        default:
+            //            simklStatus = SimklStatus.watching;
+            //            break;
+            //    }
+
+            //    if (await _simklApiCalls.UpdateAnime(animeId, simklStatus, isShow.Value, ids, numberOfWatchedEpisodes))
+            //    {
+            //        return new UpdateAnimeStatusResponse();
+            //    }
+            //}
+
+            return null;
+        }
+        public async Task<MalApiCalls.User> GetUser()
+        {
+            if (_malApiCalls != null)
+            {
+                return await _malApiCalls.GetUserInformation();
+            }
+
+            //if (_aniListApiCalls != null)
+            //{
+            //    AniListViewer.Viewer user = await _aniListApiCalls.GetCurrentUser();
+            //    return ClassConversions.ConvertUser(user.Id, user.Name);
+            //}
+
+            //if (_kitsuApiCalls != null)
+            //{
+            //    var user = await _kitsuApiCalls.GetUserId();
+            //    if (user != null)
+            //        return new MalApiCalls.User
+            //        {
+            //            Id = user.Value
+            //        };
+            //}
+
+            //if (_annictApiCalls != null)
+            //{
+            //    AnnictViewer.AnnictViewerRoot user = await _annictApiCalls.GetCurrentUser();
+            //    if (user != null)
+            //        return new MalApiCalls.User
+            //        {
+            //            Name = user.AnnictSearchData.Viewer.username
+            //        };
+            //}
+
+            //if (_shikimoriApiCalls != null)
+            //{
+            //    ShikimoriApiCalls.User user = await _shikimoriApiCalls.GetUserInformation();
+            //    if (user != null)
+            //    {
+            //        return new MalApiCalls.User
+            //        {
+            //            Id = user.Id,
+            //            Name = user.Name
+            //        };
+            //    }
+            //}
+
+            return null;
+        }
+
+        public async Task<List<Anime>> GetAnimeList(Status status, int? userId = null)
+        {
+            if (_malApiCalls != null)
+            {
+                var malAnimeList = await _malApiCalls.GetUserAnimeList(status);
+                return malAnimeList?.Select(animeList => animeList.Anime).ToList();
+            }
+
+            //if (_aniListApiCalls != null && userId != null)
+            //{
+            //    AniListSearch.MediaListStatus anilistStatus;
+            //    switch (status)
+            //    {
+            //        case Status.Watching:
+            //            anilistStatus = AniListSearch.MediaListStatus.Current;
+            //            break;
+            //        case Status.Completed:
+            //            anilistStatus = AniListSearch.MediaListStatus.Completed;
+            //            break;
+            //        case Status.Rewatching:
+            //            anilistStatus = AniListSearch.MediaListStatus.Repeating;
+            //            break;
+            //        case Status.On_hold:
+            //            anilistStatus = AniListSearch.MediaListStatus.Paused;
+            //            break;
+            //        case Status.Dropped:
+            //            anilistStatus = AniListSearch.MediaListStatus.Dropped;
+            //            break;
+            //        case Status.Plan_to_watch:
+            //            anilistStatus = AniListSearch.MediaListStatus.Planning;
+            //            break;
+            //        default:
+            //            anilistStatus = AniListSearch.MediaListStatus.Current;
+            //            break;
+            //    }
+
+            //    var animeList = await _aniListApiCalls.GetAnimeList(userId.Value, anilistStatus);
+            //    List<Anime> convertedList = new List<Anime>();
+            //    if (animeList != null)
+            //    {
+            //        foreach (var media in animeList)
+            //        {
+            //            int lastIndex = media.Media.SiteUrl.LastIndexOf("/", StringComparison.CurrentCulture);
+            //            if (lastIndex != -1)
+            //            {
+            //                DateTime finishDate = new DateTime();
+            //                if (media.CompletedAt is { Year: { }, Month: { }, Day: { } })
+            //                {
+            //                    finishDate = new DateTime(media.CompletedAt.Year.Value, media.CompletedAt.Month.Value, media.CompletedAt.Day.Value);
+            //                }
+
+            //                convertedList.Add(new Anime
+            //                {
+            //                    Id = media.Media.Id,
+            //                    MyListStatus = new MyListStatus
+            //                    {
+            //                        FinishDate = finishDate.ToShortDateString(),
+            //                        NumEpisodesWatched = media.Progress ?? -1
+            //                    }
+            //                });
+            //            }
+            //        }
+            //    }
+
+            //    return convertedList;
+            //}
+
+            //if (_kitsuApiCalls != null && userId != null)
+            //{
+            //    KitsuUpdate.Status kitsuStatus;
+            //    switch (status)
+            //    {
+            //        case Status.Watching:
+            //        case Status.Rewatching:
+            //            kitsuStatus = KitsuUpdate.Status.current;
+            //            break;
+            //        case Status.Completed:
+            //            kitsuStatus = KitsuUpdate.Status.completed;
+            //            break;
+            //        case Status.On_hold:
+            //            kitsuStatus = KitsuUpdate.Status.on_hold;
+            //            break;
+            //        case Status.Dropped:
+            //            kitsuStatus = KitsuUpdate.Status.dropped;
+            //            break;
+            //        case Status.Plan_to_watch:
+            //            kitsuStatus = KitsuUpdate.Status.planned;
+            //            break;
+            //        default:
+            //            kitsuStatus = KitsuUpdate.Status.current;
+            //            break;
+            //    }
+
+            //    KitsuUpdate.KitsuLibraryEntryListRoot animeList = await _kitsuApiCalls.GetUserAnimeList(userId.Value, status: kitsuStatus);
+            //    if (animeList != null)
+            //    {
+            //        List<Anime> convertedList = new List<Anime>();
+            //        foreach (KitsuUpdate.KitsuLibraryEntry kitsuLibraryEntry in animeList.Data)
+            //        {
+            //            Anime toAddAnime = new Anime();
+            //            if (kitsuLibraryEntry.Relationships != null &&
+            //                kitsuLibraryEntry.Relationships.AnimeData != null &&
+            //                kitsuLibraryEntry.Relationships.AnimeData.Anime != null)
+            //            {
+            //                toAddAnime.Id = kitsuLibraryEntry.Relationships.AnimeData.Anime.Id;
+            //            }
+
+            //            toAddAnime.MyListStatus = new MyListStatus();
+            //            if (kitsuLibraryEntry.Attributes != null)
+            //            {
+            //                toAddAnime.MyListStatus.FinishDate = kitsuLibraryEntry.Attributes.FinishedAt.ToString();
+            //                if (kitsuLibraryEntry.Attributes.Progress != null)
+            //                {
+            //                    toAddAnime.MyListStatus.NumEpisodesWatched = kitsuLibraryEntry.Attributes.Progress.Value;
+            //                }
+            //            }
+
+            //            convertedList.Add(toAddAnime);
+            //        }
+
+            //        return convertedList;
+            //    }
+            //}
+
+            //if (_annictApiCalls != null)
+            //{
+            //    AnnictSearch.AnnictMediaStatus annictMediaStatus;
+            //    switch (status)
+            //    {
+            //        case Status.Watching:
+            //        case Status.Rewatching:
+            //            annictMediaStatus = AnnictSearch.AnnictMediaStatus.Watching;
+            //            break;
+            //        case Status.Completed:
+            //            annictMediaStatus = AnnictSearch.AnnictMediaStatus.Watched;
+            //            break;
+            //        case Status.On_hold:
+            //            annictMediaStatus = AnnictSearch.AnnictMediaStatus.On_hold;
+            //            break;
+            //        case Status.Dropped:
+            //            annictMediaStatus = AnnictSearch.AnnictMediaStatus.Stop_watching;
+            //            break;
+            //        case Status.Plan_to_watch:
+            //            annictMediaStatus = AnnictSearch.AnnictMediaStatus.Wanna_watch;
+            //            break;
+            //        default:
+            //            annictMediaStatus = AnnictSearch.AnnictMediaStatus.No_state;
+            //            break;
+            //    }
+
+            //    List<AnnictSearch.AnnictAnime> animeList = await _annictApiCalls.GetAnimeList(annictMediaStatus);
+            //    if (animeList != null)
+            //    {
+            //        List<Anime> convertedList = new List<Anime>();
+            //        foreach (AnnictSearch.AnnictAnime annictAnime in animeList)
+            //        {
+            //            convertedList.Add(ClassConversions.ConvertAnnictAnime(annictAnime));
+            //        }
+
+            //        return convertedList;
+            //    }
+            //}
+
+            //if (_shikimoriApiCalls != null)
+            //{
+            //    ShikimoriUserRate.StatusEnum shikimoriUpdateStatus;
+
+            //    switch (status)
+            //    {
+            //        case Status.Watching:
+            //            shikimoriUpdateStatus = ShikimoriUserRate.StatusEnum.watching;
+            //            break;
+            //        case Status.Rewatching:
+            //            shikimoriUpdateStatus = ShikimoriUserRate.StatusEnum.rewatching;
+            //            break;
+            //        case Status.Completed:
+            //            shikimoriUpdateStatus = ShikimoriUserRate.StatusEnum.completed;
+            //            break;
+            //        case Status.On_hold:
+            //            shikimoriUpdateStatus = ShikimoriUserRate.StatusEnum.on_hold;
+            //            break;
+            //        case Status.Dropped:
+            //            shikimoriUpdateStatus = ShikimoriUserRate.StatusEnum.dropped;
+            //            break;
+            //        case Status.Plan_to_watch:
+            //            shikimoriUpdateStatus = ShikimoriUserRate.StatusEnum.planned;
+            //            break;
+            //        default:
+            //            shikimoriUpdateStatus = ShikimoriUserRate.StatusEnum.watching;
+            //            break;
+            //    }
+
+            //    var animeList = await _shikimoriApiCalls.GetUserAnimeList(status: shikimoriUpdateStatus);
+            //    if (animeList != null)
+            //    {
+            //        List<Anime> convertedList = new List<Anime>();
+            //        foreach (ShikimoriAnime shikimoriAnime in animeList)
+            //        {
+            //            convertedList.Add(ClassConversions.ConvertShikimoriAnime(shikimoriAnime));
+            //        }
+
+            //        return convertedList;
+            //    }
+            //}
+
+            return null;
+        }
+    }
+}
