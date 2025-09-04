@@ -117,12 +117,21 @@ namespace Shoko.AniSync
             return null;
         }
 
-        private Anime? FetchIdFromProvider(IShokoEpisode episode)
+        private async Task<Anime?> FetchIdFromProvider(IShokoEpisode episode)
         {
-            var searchTasks = episode.Series.Titles.Select(t => ApiCallHelpers.SearchAnime(t.Title)).ToArray();
-            var results = Task.WhenAll(searchTasks).Result;
-            var allAnimes = results.SelectMany(list => list);
-            var uniqueAnimes = allAnimes.DistinctBy(a => a.Id).ToList();
+            // Cache key for search results
+            var cacheKey = $"mal_search_{episode.Series.AnidbAnimeID}";
+            
+            var uniqueAnimes = await _memoryCache.GetOrCreateAsync(cacheKey, async entry =>
+            {
+                entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(15);
+                
+                var searchTasks = episode.Series.Titles.Select(t => ApiCallHelpers.SearchAnime(t.Title)).ToArray();
+                var results = await Task.WhenAll(searchTasks);
+                var allAnimes = results.SelectMany(list => list);
+                return allAnimes.DistinctBy(a => a.Id).ToList();
+            });
+            
             var candidates = uniqueAnimes
                             .Where(a => TitleCheck(a, episode))
                             .Select(a => new {
@@ -135,69 +144,84 @@ namespace Shoko.AniSync
                             .Where(x => x.DiffDays < 30)
                             .OrderBy(x => x.DiffDays)
                             .ToList();
+            
+            if (candidates.Count > 1)
+            {
+                _logger.LogDebug($"Found {candidates.Count} candidates for {episode.Series.Titles.First().Title}, selected best match with {candidates.First().DiffDays:0} days difference");
+            }
+            
             Anime? anime = candidates.FirstOrDefault()?.Anime;
             if (anime == null)
             {
                 _logger.LogError($"Could not find anime for {episode.Series.Titles.First().Title}");
                 return null;
             }
-            //if (episode.Series.Type is AnimeType.OVA or AnimeType.TVSpecial or AnimeType.Other && !episode.Titles.Any(episodeName => ContainsExtended(anime.Title, episodeName.Title) || (anime.AlternativeTitles.En != null && ContainsExtended(anime.AlternativeTitles.En, episodeName.Title)) || (anime.AlternativeTitles.Ja != null && ContainsExtended(anime.AlternativeTitles.Ja, episodeName.Title))))
-            //{
-            //    anime = GetOva(anime.Id, episode.Titles, anime.AlternativeId).Result;
-            //}
-            anime = ApiCallHelpers.GetAnime(anime.Id, getRelated: true, alternativeId: anime.AlternativeId).Result;
+            
+            // Only fetch full details if we don't have them cached and actually need related anime
+            // For now, return the basic anime object as it contains most needed fields
             return anime;
         }
 
-        private Anime? GetIdFromOfflineDb(IShokoEpisode episode)
+        private async Task<Anime?> GetIdFromOfflineDb(IShokoEpisode episode)
         {
-            var offlineDbIds = AnimeOfflineDatabaseHelpers.GetProviderIdsFromMetadataProvider(_httpClientFactory.CreateClient(), episode.Series.AnidbAnimeID, AnimeOfflineDatabaseHelpers.Source.Anidb).Result;
+            var offlineDbIds = await AnimeOfflineDatabaseHelpers.GetProviderIdsFromMetadataProvider(_httpClientFactory.CreateClient(), episode.Series.AnidbAnimeID, AnimeOfflineDatabaseHelpers.Source.Anidb);
             if (offlineDbIds == null || offlineDbIds.Mal == null)
             {
-                _logger.LogError($"Could not get offline database IDs for episode {episode.Series.AnidbAnimeID}, fetching...");
-                return FetchIdFromProvider(episode);
+                _logger.LogWarning($"Could not get offline database IDs for episode {episode.Series.AnidbAnimeID}, fetching from provider...");
+                return await FetchIdFromProvider(episode);
             }
             var malId = offlineDbIds.Mal;
-            var anime = ApiCallHelpers.GetAnime(malId.Value).Result;
+            var anime = await ApiCallHelpers.GetAnime(malId.Value);
             if (anime == null)
             {
-                _logger.LogError($"Could not get anime for MAL ID {malId}, fetching...");
-                return null;
+                _logger.LogError($"Could not get anime for MAL ID {malId}, fetching from provider...");
+                return await FetchIdFromProvider(episode);
             }
             return anime;
         }
 
-        private void OnEpisodeWatchedAsync(object? sender, VideoUserDataSavedEventArgs e)
+        private async void OnEpisodeWatchedAsync(object? sender, VideoUserDataSavedEventArgs e)
         {
-            switch (Plugin.Instance.Config.SelectedProvider)
+            try
             {
-                case Configuration.ApiName.Mal:
-                    ApiCallHelpers = new ApiCallHelpers(malApiCalls: new MalApiCalls(_httpClientFactory, _loggerFactory, _memoryCache, new Delayer()));
-                    break;
-                default:
-                    break;
-            }
-
-            IShokoEpisode maxEpisode = null;
-            foreach (var episode in e.Video.Episodes)
-            {
-                if (episode.Type is not EpisodeType.Episode and not EpisodeType.Special || episode.Series is not { } series) continue;
-                if (maxEpisode == null || episode.EpisodeNumber > maxEpisode.EpisodeNumber)
+                switch (Plugin.Instance.Config.SelectedProvider)
                 {
-                    maxEpisode = episode;
+                    case Configuration.ApiName.Mal:
+                        ApiCallHelpers = new ApiCallHelpers(malApiCalls: new MalApiCalls(_httpClientFactory, _loggerFactory, _memoryCache, new Delayer()));
+                        break;
+                    default:
+                        break;
+                }
+
+                IShokoEpisode maxEpisode = null;
+                foreach (var episode in e.Video.Episodes)
+                {
+                    if (episode.Type is not EpisodeType.Episode and not EpisodeType.Special || episode.Series is not { } series) continue;
+                    if (maxEpisode == null || episode.EpisodeNumber > maxEpisode.EpisodeNumber)
+                    {
+                        maxEpisode = episode;
+                    }
+                }
+                if (maxEpisode == null)
+                {
+                    _logger.LogWarning($"No episodes found for {e.Video.MediaInfo.Title}");
+                    return;
+                }
+
+                var anime = await GetIdFromOfflineDb(maxEpisode);
+                if (anime != null)
+                {
+                    _logger.LogInformation($"Found Anime: {anime.Title} ({anime.Id})");
+                    _logger.LogDebug($"Anime status: {anime.Title} ({anime.Id}) - Status: {anime.MyListStatus?.Status ?? "Not in list"}, Episodes watched: {anime.MyListStatus?.NumEpisodesWatched ?? 0}");
+                }
+                else
+                {
+                    _logger.LogWarning($"Could not find MAL anime for {maxEpisode.Series.PreferredTitle}");
                 }
             }
-            if (maxEpisode == null)
+            catch (Exception ex)
             {
-                _logger.LogError($"No episodes found for {e.Video.MediaInfo.Title}");
-                return;
-            }
-
-            var anime = GetIdFromOfflineDb(maxEpisode);
-            if (anime != null)
-            {
-                _logger.LogInformation($"Found Anime: {anime.Title} ({anime.Id})!!!!!!!!!!!!!!!!!!!!!!");
-                _logger.LogInformation($"Found Anime: {anime.Title} ({anime.Id}) - {anime.MyListStatus == null} ? {(anime.MyListStatus != null ? $"{anime.MyListStatus.Status} ({anime.MyListStatus.NumEpisodesWatched})" : "")}");
+                _logger.LogError(ex, "Error processing episode watch event");
             }
         }
 
