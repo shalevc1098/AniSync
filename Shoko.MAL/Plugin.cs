@@ -1,8 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
 using Shoko.AniSync.Configuration;
-using Shoko.AniSync.Models;
 using Shoko.Plugin.Abstractions;
-using Shoko.Plugin.Abstractions.Events;
 using Shoko.Plugin.Abstractions.Services;
 using System;
 using System.Collections.Generic;

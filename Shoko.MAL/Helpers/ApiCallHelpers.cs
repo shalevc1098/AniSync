@@ -1,5 +1,4 @@
-﻿using Microsoft.AspNetCore.Mvc.Formatters;
-using Shoko.AniSync.Api;
+﻿using Shoko.AniSync.Api;
 using Shoko.AniSync.Interfaces;
 using Shoko.AniSync.Models.Mal;
 using Shoko.Plugin.Abstractions.DataModels;

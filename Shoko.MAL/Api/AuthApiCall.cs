@@ -1,5 +1,4 @@
-﻿using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Caching.Memory;
+﻿using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Shoko.AniSync.Configuration;
 using Shoko.AniSync.Interfaces;
@@ -18,7 +17,6 @@ namespace Shoko.AniSync.Api
     public class AuthApiCall
     {
         private readonly IHttpClientFactory _httpClientFactory;
-        private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly ILoggerFactory _loggerFactory;
         private readonly ILogger<AuthApiCall> _logger;
         private readonly IMemoryCache _memoryCache;

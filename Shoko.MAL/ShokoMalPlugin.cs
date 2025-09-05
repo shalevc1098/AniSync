@@ -11,7 +11,6 @@ using Shoko.Plugin.Abstractions.DataModels.Shoko;
 using Shoko.AniSync.Helpers;
 using Shoko.AniSync.Models.Mal;
 using System.Globalization;
-using System.Xml.Linq;
 using System.Linq;
 using Shoko.AniSync.Configuration;
 using System.Text.RegularExpressions;
