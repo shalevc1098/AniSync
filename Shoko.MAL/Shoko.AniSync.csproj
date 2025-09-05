@@ -20,4 +20,19 @@
         <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.2" ExcludeAssets="runtime" />
         <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="8.0.0" ExcludeAssets="runtime" />
     </ItemGroup>
+    
+    <ItemGroup>
+        <!-- Embed HTML files as resources in the DLL -->
+        <EmbeddedResource Include="wwwroot\**\*.html" />
+    </ItemGroup>
+    
+
+    <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+        <PropertyGroup>
+            <ShokoPluginsDir>$(ProgramData)\ShokoServer\plugins</ShokoPluginsDir>
+        </PropertyGroup>
+        <MakeDir Directories="$(ShokoPluginsDir)" Condition="!Exists('$(ShokoPluginsDir)')" />
+        <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ShokoPluginsDir)" />
+        <Message Text="Plugin copied to: $(ShokoPluginsDir)" Importance="high" />
+    </Target>
 </Project>

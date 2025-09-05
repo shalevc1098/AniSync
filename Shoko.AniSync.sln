@@ -5,6 +5,8 @@ VisualStudioVersion = 17.10.34928.147
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Shoko.AniSync", "Shoko.MAL\Shoko.AniSync.csproj", "{1F244984-17A0-4D5E-B1F0-6C679B92B615}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Shoko.Tests", "Shoko.Tests\Shoko.Tests.csproj", "{92DFF55D-2BC4-4A25-A158-B781B64D569C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -15,6 +17,10 @@ Global
 		{1F244984-17A0-4D5E-B1F0-6C679B92B615}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{1F244984-17A0-4D5E-B1F0-6C679B92B615}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{1F244984-17A0-4D5E-B1F0-6C679B92B615}.Release|Any CPU.Build.0 = Release|Any CPU
+		{92DFF55D-2BC4-4A25-A158-B781B64D569C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{92DFF55D-2BC4-4A25-A158-B781B64D569C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{92DFF55D-2BC4-4A25-A158-B781B64D569C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{92DFF55D-2BC4-4A25-A158-B781B64D569C}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
