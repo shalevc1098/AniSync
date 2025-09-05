@@ -248,7 +248,7 @@ namespace Shoko.AniSync.Controllers
             config.SyncDelaySeconds = model.SyncDelaySeconds;
             config.EnableDebugLogging = model.EnableDebugLogging;
             
-            Config.SaveConfig(config, _applicationPaths);
+            config.Save();
             
             // TempData["SuccessMessage"] = "Settings saved successfully!";
             return Redirect("/anisync/settings");
@@ -344,7 +344,7 @@ namespace Shoko.AniSync.Controllers
                     {
                         config.Auths.Remove(currentUser);
                     }
-                    Config.SaveConfig(config, _applicationPaths);
+                    config.Save();
                 }
             }
             

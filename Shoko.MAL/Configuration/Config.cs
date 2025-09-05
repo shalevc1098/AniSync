@@ -14,11 +14,6 @@ namespace Shoko.AniSync.Configuration
     {
         private readonly string _filePath;
 
-        [JsonProperty("plan_to_watch_only")]
-        public bool PlanToWatchOnly { get; set; } = true;
-
-        [JsonProperty("rewatch_completed")]
-        public bool RewatchCompleted { get; set; } = true;
         [JsonProperty("update_nsfw")]
         public bool UpdateNsfw { get; set; } = false;
 
@@ -144,11 +139,6 @@ namespace Shoko.AniSync.Configuration
         {
             var configPath = Path.Combine(applicationPaths.PluginsPath, "AniSync", "config.json");
             return new Config(configPath);
-        }
-        
-        public static void SaveConfig(Config config, IApplicationPaths applicationPaths)
-        {
-            config?.Save();
         }
     }
 }
