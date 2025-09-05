@@ -1,0 +1,50 @@
+@model Shoko.AniSync.Controllers.TestViewModel
+@{
+    Layout = "_Layout";
+    ViewData["Title"] = Model.Title;
+}
+
+<h1>@Model.Title</h1>
+<p>@Model.Message</p>
+
+<div style="margin-top: 2rem;">
+    <h2>Items from Model:</h2>
+    <ul>
+        @foreach(var item in Model.Items)
+        {
+            <li>@item</li>
+        }
+    </ul>
+</div>
+
+<div style="margin-top: 2rem;">
+    <h3>Razor Features Test:</h3>
+    <table style="width: 100%; border-collapse: collapse;">
+        <tr>
+            <td style="padding: 0.5rem; border: 1px solid #2b3556;">Conditional Rendering:</td>
+            <td style="padding: 0.5rem; border: 1px solid #2b3556;">
+                @if(Model.Items.Count > 0)
+                {
+                    <span style="color: #22c55e;">✓ Has items (@Model.Items.Count)</span>
+                }
+                else
+                {
+                    <span style="color: #ef4444;">✗ No items</span>
+                }
+            </td>
+        </tr>
+        <tr>
+            <td style="padding: 0.5rem; border: 1px solid #2b3556;">Loop Index:</td>
+            <td style="padding: 0.5rem; border: 1px solid #2b3556;">
+                @for(int i = 0; i < Model.Items.Count; i++)
+                {
+                    <span>[@i] </span>
+                }
+            </td>
+        </tr>
+        <tr>
+            <td style="padding: 0.5rem; border: 1px solid #2b3556;">Server Time:</td>
+            <td style="padding: 0.5rem; border: 1px solid #2b3556;">@DateTime.Now</td>
+        </tr>
+    </table>
+</div>

@@ -1,0 +1,22 @@
+namespace Shoko.AniSync.Models.ViewModels
+{
+    public class SettingsViewModel
+    {
+        public bool IsAuthenticated { get; set; }
+        public string Username { get; set; }
+        
+        // Sync settings
+        public bool EnableAutoSync { get; set; } = true;
+        public bool SyncOnlyCompleted { get; set; } = true;
+        public bool EnableRewatchDetection { get; set; } = true;
+        public bool AllowRollback { get; set; } = false;
+        
+        // Title matching
+        public double TitleMatchThreshold { get; set; } = 0.8;
+        public bool UseFuzzyMatching { get; set; } = true;
+        
+        // Advanced
+        public int SyncDelaySeconds { get; set; } = 5;
+        public bool EnableDebugLogging { get; set; } = false;
+    }
+}

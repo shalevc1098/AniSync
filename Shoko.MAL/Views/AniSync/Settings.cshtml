@@ -1,0 +1,138 @@
+@{
+    ViewData["Title"] = "Settings";
+    ViewData["IsAuthenticated"] = Model?.IsAuthenticated ?? false;
+    ViewData["Username"] = Model?.Username ?? "Guest";
+}
+
+<div class="card">
+    <h1 class="card-title">⚙️ Sync Settings</h1>
+    
+    @if (TempData["SuccessMessage"] != null)
+    {
+        <div class="alert alert-success">
+            ✅ @TempData["SuccessMessage"]
+        </div>
+    }
+    
+    <form method="post" action="/anisync/settings">
+        <div class="form-group">
+            <label class="form-label">
+                <input type="checkbox" name="EnableAutoSync" @(Model?.EnableAutoSync == true ? "checked" : "")>
+                Enable Automatic Syncing
+            </label>
+            <small style="color: #718096; display: block; margin-top: 0.25rem;">
+                Automatically sync watch status to MAL when you watch episodes in Shoko
+            </small>
+        </div>
+        
+        <div class="form-group">
+            <label class="form-label">
+                <input type="checkbox" name="SyncOnlyCompleted" @(Model?.SyncOnlyCompleted == true ? "checked" : "")>
+                Only Sync Completed Episodes
+            </label>
+            <small style="color: #718096; display: block; margin-top: 0.25rem;">
+                Wait until an episode is fully watched before syncing to MAL
+            </small>
+        </div>
+        
+        <div class="form-group">
+            <label class="form-label">
+                <input type="checkbox" name="EnableRewatchDetection" @(Model?.EnableRewatchDetection == true ? "checked" : "")>
+                Enable Rewatch Detection
+            </label>
+            <small style="color: #718096; display: block; margin-top: 0.25rem;">
+                Detect when you're rewatching a series and handle appropriately
+            </small>
+        </div>
+        
+        <div class="form-group">
+            <label class="form-label">
+                <input type="checkbox" name="AllowRollback" @(Model?.AllowRollback == true ? "checked" : "")>
+                Allow Progress Rollback
+            </label>
+            <small style="color: #718096; display: block; margin-top: 0.25rem;">
+                Allow MAL progress to be reduced when unmarking highest episode as unwatched
+            </small>
+        </div>
+        
+        <hr style="margin: 2rem 0; border: none; border-top: 1px solid #e2e8f0;">
+        
+        <h2 style="font-size: 1.2rem; margin-bottom: 1rem; color: #2d3748;">Title Matching</h2>
+        
+        <div class="form-group">
+            <label class="form-label">Title Match Threshold</label>
+            <input type="range" name="TitleMatchThreshold" min="0.5" max="1.0" step="0.05" 
+                   value="@(Model?.TitleMatchThreshold ?? 0.8)" 
+                   oninput="document.getElementById('threshold-value').textContent = this.value">
+            <span id="threshold-value" style="color: #718096;">@(Model?.TitleMatchThreshold ?? 0.8)</span>
+            <small style="color: #718096; display: block; margin-top: 0.25rem;">
+                How closely anime titles must match (1.0 = exact match)
+            </small>
+        </div>
+        
+        <div class="form-group">
+            <label class="form-label">
+                <input type="checkbox" name="UseFuzzyMatching" @(Model?.UseFuzzyMatching == true ? "checked" : "")>
+                Use Fuzzy Title Matching
+            </label>
+            <small style="color: #718096; display: block; margin-top: 0.25rem;">
+                Enable advanced matching for titles with special characters or variations
+            </small>
+        </div>
+        
+        <hr style="margin: 2rem 0; border: none; border-top: 1px solid #e2e8f0;">
+        
+        <h2 style="font-size: 1.2rem; margin-bottom: 1rem; color: #2d3748;">Advanced Settings</h2>
+        
+        <div class="form-group">
+            <label class="form-label">Sync Delay (seconds)</label>
+            <input type="number" name="SyncDelaySeconds" class="form-control" 
+                   value="@(Model?.SyncDelaySeconds ?? 5)" min="0" max="60">
+            <small style="color: #718096; display: block; margin-top: 0.25rem;">
+                Delay before syncing after watching an episode (0 = immediate)
+            </small>
+        </div>
+        
+        <div class="form-group">
+            <label class="form-label">
+                <input type="checkbox" name="EnableDebugLogging" @(Model?.EnableDebugLogging == true ? "checked" : "")>
+                Enable Debug Logging
+            </label>
+            <small style="color: #718096; display: block; margin-top: 0.25rem;">
+                Log detailed sync information for troubleshooting
+            </small>
+        </div>
+        
+        <div style="display: flex; gap: 1rem; margin-top: 2rem;">
+            <button type="submit" class="btn btn-primary">Save Settings</button>
+            <button type="reset" class="btn btn-secondary">Reset to Defaults</button>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h2 class="card-title">🔗 Account Connection</h2>
+    
+    @if (Model?.IsAuthenticated == true)
+    {
+        <div style="background: #f0fff4; border: 1px solid #9ae6b4; border-radius: 0.5rem; padding: 1rem; margin-bottom: 1.5rem;">
+            <strong style="color: #276749;">Connected Account:</strong>
+            <span style="color: #38a169;">@Model.Username</span>
+        </div>
+        
+        <div style="display: flex; gap: 1rem;">
+            <form method="post" action="/anisync/refresh-token" style="display: inline;">
+                <button type="submit" class="btn btn-secondary">Refresh Connection</button>
+            </form>
+            
+            <form method="post" action="/anisync/logout" style="display: inline;">
+                <button type="submit" class="btn btn-danger">Disconnect Account</button>
+            </form>
+        </div>
+    }
+    else
+    {
+        <p style="color: #718096; margin-bottom: 1rem;">No MyAnimeList account connected.</p>
+        <a href="/anisync/login" class="btn btn-primary">Connect Account</a>
+    }
+</div>

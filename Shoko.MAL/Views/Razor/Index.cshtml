@@ -1,0 +1,24 @@
+@{
+    Layout = "_Layout";
+}
+
+<h1>@ViewData["Title"]</h1>
+<p>@ViewData["Message"]</p>
+
+<div style="margin-top: 2rem;">
+    <h2>Razor View Engine Status</h2>
+    <p style="color: #22c55e;">✓ Razor views are working!</p>
+    
+    <div style="margin-top: 1rem;">
+        <p>This page is rendered using the Razor view engine.</p>
+        <p>Current Time: @DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")</p>
+    </div>
+    
+    <div style="margin-top: 2rem;">
+        <h3>Available Pages:</h3>
+        <ul>
+            <li><a href="/razor/test">Test Page with Model</a></li>
+            <li><a href="/razor/config">Configuration Page</a></li>
+        </ul>
+    </div>
+</div>
