@@ -1,9 +1,19 @@
 <div class='card'>
     <h1 class='card-title'>⚙️ Settings</h1>
     
+    {USER_SETTINGS_INFO}
+    
     <form method='post' action='/anisync/settings'>
         <div class='settings-section'>
             <h3>Sync Configuration</h3>
+            
+            <div class='form-group'>
+                <label class='checkbox-label'>
+                    <input type='checkbox' name='UpdateNsfw' {UPDATE_NSFW_CHECKED}>
+                    <span>Sync NSFW Content</span>
+                </label>
+                <small>Include adult/NSFW anime in synchronization</small>
+            </div>
             
             <div class='form-group'>
                 <label class='checkbox-label'>
