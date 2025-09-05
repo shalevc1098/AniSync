@@ -28,20 +28,28 @@ namespace Shoko.AniSync.Configuration
     public class UserApiAuth
     {
         /// <summary>
-        /// Name of the API provider.
+        /// Username of the authenticated user.
         /// </summary>
-        [JsonProperty("name")]
-        [JsonConverter(typeof(StringEnumConverter))]
-        public ApiName Name { get; set; }
+        [JsonProperty("username")]
+        public string Username { get; set; }
+        
         /// <summary>
         /// Access token of the authenticated instance.
         /// </summary>
         [JsonProperty("access_token")]
         public string AccessToken { get; set; }
+        
         /// <summary>
         /// Refresh token of the authenticated instance.
         /// </summary>
         [JsonProperty("refresh_token")]
         public string RefreshToken { get; set; }
+        
+        /// <summary>
+        /// The Shoko username associated with this MAL account.
+        /// Not serialized to JSON since it's the key in the dictionary.
+        /// </summary>
+        [JsonIgnore]
+        public string ShokoUsername { get; set; }
     }
 }
