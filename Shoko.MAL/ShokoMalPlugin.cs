@@ -43,7 +43,7 @@ namespace Shoko.AniSync
             _applicationPaths = applicationPaths;
             
             // Initialize sync history manager
-            SyncHistory = new SyncHistoryManager(applicationPaths.PluginsPath, loggerFactory);
+            SyncHistory = new SyncHistoryManager(Path.Combine(applicationPaths.PluginsPath, "AniSync"), loggerFactory);
         }
 
         private bool CompareStrings(string first, string second)
