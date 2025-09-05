@@ -1,0 +1,216 @@
+using FluentAssertions;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
+using Moq;
+using Moq.Protected;
+using Shoko.AniSync.Api;
+using Shoko.AniSync.Configuration;
+using Shoko.AniSync.Models;
+using System;
+using System.IO;
+using System.Net;
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
+using Xunit;
+
+namespace Shoko.Tests
+{
+    public class AuthenticationTests
+    {
+        private readonly Mock<IHttpClientFactory> _httpClientFactoryMock;
+        private readonly Mock<ILoggerFactory> _loggerFactoryMock;
+        private readonly Mock<ILogger<ApiAuthentication>> _loggerMock;
+        private readonly Mock<IMemoryCache> _memoryCacheMock;
+        private readonly ApiAuthentication _apiAuthentication;
+
+        public AuthenticationTests()
+        {
+            _httpClientFactoryMock = new Mock<IHttpClientFactory>();
+            _loggerFactoryMock = new Mock<ILoggerFactory>();
+            _loggerMock = new Mock<ILogger<ApiAuthentication>>();
+            _memoryCacheMock = new Mock<IMemoryCache>();
+
+            _loggerFactoryMock.Setup(x => x.CreateLogger<ApiAuthentication>())
+                .Returns(_loggerMock.Object);
+
+            _apiAuthentication = new ApiAuthentication(
+                ApiName.Mal,
+                _httpClientFactoryMock.Object,
+                _loggerFactoryMock.Object,
+                _memoryCacheMock.Object);
+        }
+
+        [Fact]
+        public void BuildAuthorizeRequestUrl_ShouldIncludeRequiredParameters()
+        {
+            // Act
+            var url = _apiAuthentication.BuildAuthorizeRequestUrl();
+
+            // Assert
+            url.Should().Contain("https://myanimelist.net/v1/oauth2/authorize");
+            url.Should().Contain("response_type=code");
+            url.Should().Contain("client_id=");
+            url.Should().Contain("code_challenge=");
+            url.Should().Contain("redirect_uri=http://localhost:8111/AniSync/authCallback");
+        }
+
+        [Fact]
+        public async Task GetToken_WithValidCode_ShouldReturnUserApiAuth()
+        {
+            // Arrange
+            var authCode = "test_auth_code";
+            var shokoUsername = "testuser";
+            var tokenResponse = new
+            {
+                access_token = "test_access_token",
+                refresh_token = "test_refresh_token",
+                expires_in = 3600
+            };
+
+            var mockHttpMessageHandler = new Mock<HttpMessageHandler>();
+            mockHttpMessageHandler.Protected()
+                .Setup<Task<HttpResponseMessage>>(
+                    "SendAsync",
+                    ItExpr.IsAny<HttpRequestMessage>(),
+                    ItExpr.IsAny<CancellationToken>())
+                .ReturnsAsync(new HttpResponseMessage
+                {
+                    StatusCode = HttpStatusCode.OK,
+                    Content = new StringContent(JsonSerializer.Serialize(tokenResponse), Encoding.UTF8, "application/json")
+                });
+
+            var httpClient = new HttpClient(mockHttpMessageHandler.Object);
+            _httpClientFactoryMock.Setup(x => x.CreateClient()).Returns(httpClient);
+
+            // Initialize Plugin.Instance for the test
+            Shoko.AniSync.Plugin.Instance = new Shoko.AniSync.Plugin();
+            var tempPath = Path.Combine(Path.GetTempPath(), $"test-config-{Guid.NewGuid()}.json");
+            Shoko.AniSync.Plugin.Instance.Config = new Config(tempPath);
+
+            // Act
+            var result = _apiAuthentication.GetToken(authCode, shokoUsername: shokoUsername);
+
+            // Assert
+            result.Should().NotBeNull();
+            result.AccessToken.Should().Be("test_access_token");
+            result.RefreshToken.Should().Be("test_refresh_token");
+            result.ShokoUsername.Should().Be(shokoUsername);
+
+            // Cleanup
+            if (File.Exists(tempPath)) File.Delete(tempPath);
+        }
+
+        [Fact]
+        public void GetToken_WithInvalidResponse_ShouldThrowAuthenticationException()
+        {
+            // Arrange
+            var authCode = "invalid_code";
+            var mockHttpMessageHandler = new Mock<HttpMessageHandler>();
+            mockHttpMessageHandler.Protected()
+                .Setup<Task<HttpResponseMessage>>(
+                    "SendAsync",
+                    ItExpr.IsAny<HttpRequestMessage>(),
+                    ItExpr.IsAny<CancellationToken>())
+                .ReturnsAsync(new HttpResponseMessage
+                {
+                    StatusCode = HttpStatusCode.Unauthorized,
+                    Content = new StringContent("Invalid authorization code")
+                });
+
+            var httpClient = new HttpClient(mockHttpMessageHandler.Object);
+            _httpClientFactoryMock.Setup(x => x.CreateClient()).Returns(httpClient);
+
+            // Act & Assert
+            Assert.Throws<System.Security.Authentication.AuthenticationException>(() =>
+                _apiAuthentication.GetToken(authCode, shokoUsername: "testuser"));
+        }
+
+        [Fact]
+        public async Task GetToken_WithRefreshToken_ShouldReturnNewTokens()
+        {
+            // Arrange
+            var refreshToken = "test_refresh_token";
+            var shokoUsername = "testuser";
+            var tokenResponse = new
+            {
+                access_token = "new_access_token",
+                refresh_token = "new_refresh_token",
+                expires_in = 3600
+            };
+
+            var mockHttpMessageHandler = new Mock<HttpMessageHandler>();
+            mockHttpMessageHandler.Protected()
+                .Setup<Task<HttpResponseMessage>>(
+                    "SendAsync",
+                    ItExpr.Is<HttpRequestMessage>(req =>
+                        req.Content != null && 
+                        req.Content.ReadAsStringAsync().Result.Contains("grant_type=refresh_token")),
+                    ItExpr.IsAny<CancellationToken>())
+                .ReturnsAsync(new HttpResponseMessage
+                {
+                    StatusCode = HttpStatusCode.OK,
+                    Content = new StringContent(JsonSerializer.Serialize(tokenResponse), Encoding.UTF8, "application/json")
+                });
+
+            var httpClient = new HttpClient(mockHttpMessageHandler.Object);
+            _httpClientFactoryMock.Setup(x => x.CreateClient()).Returns(httpClient);
+
+            // Initialize Plugin.Instance for the test
+            Shoko.AniSync.Plugin.Instance = new Shoko.AniSync.Plugin();
+            var tempPath = Path.Combine(Path.GetTempPath(), $"test-config-{Guid.NewGuid()}.json");
+            Shoko.AniSync.Plugin.Instance.Config = new Config(tempPath);
+
+            // Act
+            var result = _apiAuthentication.GetToken(refreshToken: refreshToken, shokoUsername: shokoUsername);
+
+            // Assert
+            result.Should().NotBeNull();
+            result.AccessToken.Should().Be("new_access_token");
+            result.RefreshToken.Should().Be("new_refresh_token");
+
+            // Cleanup
+            if (File.Exists(tempPath)) File.Delete(tempPath);
+        }
+
+        [Fact]
+        public void GetToken_WithoutShokoUsername_ShouldThrowException()
+        {
+            // Arrange
+            var authCode = "test_auth_code";
+            var tokenResponse = new
+            {
+                access_token = "test_access_token",
+                refresh_token = "test_refresh_token"
+            };
+
+            var mockHttpMessageHandler = new Mock<HttpMessageHandler>();
+            mockHttpMessageHandler.Protected()
+                .Setup<Task<HttpResponseMessage>>(
+                    "SendAsync",
+                    ItExpr.IsAny<HttpRequestMessage>(),
+                    ItExpr.IsAny<CancellationToken>())
+                .ReturnsAsync(new HttpResponseMessage
+                {
+                    StatusCode = HttpStatusCode.OK,
+                    Content = new StringContent(JsonSerializer.Serialize(tokenResponse), Encoding.UTF8, "application/json")
+                });
+
+            var httpClient = new HttpClient(mockHttpMessageHandler.Object);
+            _httpClientFactoryMock.Setup(x => x.CreateClient()).Returns(httpClient);
+
+            Shoko.AniSync.Plugin.Instance = new Shoko.AniSync.Plugin();
+            var tempPath = Path.Combine(Path.GetTempPath(), $"test-config-{Guid.NewGuid()}.json");
+            Shoko.AniSync.Plugin.Instance.Config = new Config(tempPath);
+
+            // Act & Assert
+            Assert.Throws<InvalidOperationException>(() =>
+                _apiAuthentication.GetToken(authCode, shokoUsername: null));
+
+            // Cleanup
+            if (File.Exists(tempPath)) File.Delete(tempPath);
+        }
+    }
+}

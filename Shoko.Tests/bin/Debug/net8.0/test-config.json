@@ -1,0 +1,16 @@
+{
+  "plan_to_watch_only": true,
+  "rewatch_completed": true,
+  "update_nsfw": false,
+  "selected_provider": "Mal",
+  "auths": {},
+  "selected_shoko_user": null,
+  "enable_auto_sync": true,
+  "sync_only_completed": true,
+  "enable_rewatch_detection": true,
+  "allow_rollback": false,
+  "title_match_threshold": 0.8,
+  "use_fuzzy_matching": true,
+  "sync_delay_seconds": 5,
+  "enable_debug_logging": false
+}

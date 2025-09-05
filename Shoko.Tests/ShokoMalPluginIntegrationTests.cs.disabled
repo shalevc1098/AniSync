@@ -1,0 +1,473 @@
+using FluentAssertions;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
+using Moq;
+using Shoko.AniSync;
+using Shoko.AniSync.Configuration;
+using Shoko.AniSync.Helpers;
+using Shoko.AniSync.Interfaces;
+using Shoko.AniSync.Models.Mal;
+using Shoko.Plugin.Abstractions;
+using Shoko.Plugin.Abstractions.DataModels;
+using Shoko.Plugin.Abstractions.DataModels.Shoko;
+using Shoko.Plugin.Abstractions.Events;
+using Shoko.Plugin.Abstractions.Enums;
+using Shoko.Plugin.Abstractions.Services;
+using System.Net.Http;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Reflection;
+using System.Threading.Tasks;
+using Xunit;
+
+namespace Shoko.Tests
+{
+    public class ShokoMalPluginIntegrationTests
+    {
+        private readonly Mock<ILoggerFactory> _loggerFactoryMock;
+        private readonly Mock<ILogger<ShokoMalPlugin>> _loggerMock;
+        private readonly Mock<IApiCallHelpers> _apiCallHelpersMock;
+        private readonly Mock<IApplicationPaths> _applicationPathsMock;
+        private readonly ShokoMalPlugin _plugin;
+        private readonly string _testPluginPath;
+
+        public ShokoMalPluginIntegrationTests()
+        {
+            _loggerFactoryMock = new Mock<ILoggerFactory>();
+            _loggerMock = new Mock<ILogger<ShokoMalPlugin>>();
+            _apiCallHelpersMock = new Mock<IApiCallHelpers>();
+            _applicationPathsMock = new Mock<IApplicationPaths>();
+            
+            _testPluginPath = Path.Combine(Path.GetTempPath(), "ShokoTestPlugin");
+            _applicationPathsMock.Setup(x => x.PluginsPath).Returns(_testPluginPath);
+            
+            _loggerFactoryMock.Setup(x => x.CreateLogger<ShokoMalPlugin>())
+                .Returns(_loggerMock.Object);
+
+            // Initialize plugin with mocked dependencies
+            Shoko.AniSync.Plugin.Instance = new Shoko.AniSync.Plugin();
+            Shoko.AniSync.Plugin.Instance.Config = new Config(Path.Combine(_testPluginPath, "test-config.json"));
+            
+            // Create plugin instance - need to mock all required dependencies
+            var httpClientFactory = new Mock<IHttpClientFactory>();
+            var memoryCache = new Mock<IMemoryCache>();
+            var metadataService = new Mock<IMetadataService>();
+            var userDataService = new Mock<IUserDataService>();
+            
+            _plugin = new ShokoMalPlugin(
+                _applicationPathsMock.Object,
+                httpClientFactory.Object,
+                _loggerFactoryMock.Object,
+                memoryCache.Object,
+                metadataService.Object,
+                userDataService.Object);
+            
+            _plugin.ApiCallHelpers = _apiCallHelpersMock.Object;
+        }
+
+        [Fact]
+        public async Task EpisodeWatched_FirstEpisode_ShouldSetStartDate()
+        {
+            // Arrange
+            var episodeMock = CreateMockEpisode(1, true);
+            var userMock = CreateMockUser("testuser");
+            var videoMock = CreateMockVideo(episodeMock.Object);
+            var userDataMock = CreateMockUserData(1);
+            
+            var anime = new Anime
+            {
+                Id = 12345,
+                Title = "Test Anime",
+                NumEpisodes = 12,
+                MyListStatus = null // Not in list yet
+            };
+
+            _apiCallHelpersMock.Setup(x => x.SearchAnime(It.IsAny<string>(), It.IsAny<string>()))
+                .ReturnsAsync(new List<Anime> { anime });
+            
+            _apiCallHelpersMock.Setup(x => x.GetAnime(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<string>()))
+                .ReturnsAsync(anime);
+
+            DateTime? capturedStartDate = null;
+            DateTime? capturedEndDate = null;
+            
+            _apiCallHelpersMock.Setup(x => x.UpdateAnime(
+                    It.IsAny<int>(),
+                    It.IsAny<int>(),
+                    It.IsAny<Status>(),
+                    It.IsAny<bool?>(),
+                    It.IsAny<int?>(),
+                    It.IsAny<DateTime?>(),
+                    It.IsAny<DateTime?>(),
+                    It.IsAny<string>(),
+                    It.IsAny<AnimeOfflineDatabaseHelpers.OfflineDatabaseResponse>(),
+                    It.IsAny<bool?>(),
+                    It.IsAny<string>()))
+                .Callback<int, int, Status, bool?, int?, DateTime?, DateTime?, string, AnimeOfflineDatabaseHelpers.OfflineDatabaseResponse, bool?, string>(
+                    (id, eps, status, rewatch, rewatchCount, start, end, altId, ids, isShow, user) =>
+                    {
+                        capturedStartDate = start;
+                        capturedEndDate = end;
+                    })
+                .ReturnsAsync(new UpdateAnimeStatusResponse());
+
+            var eventArgs = new VideoUserDataSavedEventArgs(
+                UserDataSaveReason.Playback,
+                userMock.Object,
+                videoMock.Object,
+                userDataMock.Object
+            );
+
+            // Act
+            // Call the private method via reflection (or make it public for testing)
+            var method = typeof(ShokoMalPlugin).GetMethod("OnEpisodeWatchedAsync", 
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            await (Task)method.Invoke(_plugin, new object[] { null, eventArgs });
+
+            // Assert
+            capturedStartDate.Should().NotBeNull("Should set start date for first episode");
+            capturedStartDate.Value.Date.Should().Be(DateTime.Now.Date);
+            capturedEndDate.Should().BeNull("Should not set end date for first episode");
+        }
+
+        [Fact]
+        public async Task EpisodeWatched_LastEpisode_ShouldSetEndDate()
+        {
+            // Arrange
+            var episodeMock = CreateMockEpisode(12, true);
+            var userMock = CreateMockUser("testuser");
+            var videoMock = CreateMockVideo(episodeMock.Object);
+            var userDataMock = CreateMockUserData(1);
+            
+            var anime = new Anime
+            {
+                Id = 12345,
+                Title = "Test Anime",
+                NumEpisodes = 12,
+                MyListStatus = new MyListStatus
+                {
+                    Status = Status.Watching,
+                    NumEpisodesWatched = 11,
+                    StartDate = "2024-01-01"
+                }
+            };
+
+            _apiCallHelpersMock.Setup(x => x.GetAnime(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<string>()))
+                .ReturnsAsync(anime);
+
+            DateTime? capturedEndDate = null;
+            Status? capturedStatus = null;
+            
+            _apiCallHelpersMock.Setup(x => x.UpdateAnime(
+                    It.IsAny<int>(),
+                    It.IsAny<int>(),
+                    It.IsAny<Status>(),
+                    It.IsAny<bool?>(),
+                    It.IsAny<int?>(),
+                    It.IsAny<DateTime?>(),
+                    It.IsAny<DateTime?>(),
+                    It.IsAny<string>(),
+                    It.IsAny<AnimeOfflineDatabaseHelpers.OfflineDatabaseResponse>(),
+                    It.IsAny<bool?>(),
+                    It.IsAny<string>()))
+                .Callback<int, int, Status, bool?, int?, DateTime?, DateTime?, string, AnimeOfflineDatabaseHelpers.OfflineDatabaseResponse, bool?, string>(
+                    (id, eps, status, rewatch, rewatchCount, start, end, altId, ids, isShow, user) =>
+                    {
+                        capturedEndDate = end;
+                        capturedStatus = status;
+                    })
+                .ReturnsAsync(new UpdateAnimeStatusResponse());
+
+            var eventArgs = new VideoUserDataSavedEventArgs(
+                UserDataSaveReason.Playback,
+                userMock.Object,
+                videoMock.Object,
+                userDataMock.Object
+            );
+
+            // Act
+            // Call the private method via reflection (or make it public for testing)
+            var method = typeof(ShokoMalPlugin).GetMethod("OnEpisodeWatchedAsync", 
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            await (Task)method.Invoke(_plugin, new object[] { null, eventArgs });
+
+            // Assert
+            capturedStatus.Should().Be(Status.Completed);
+            capturedEndDate.Should().NotBeNull("Should set end date when completing");
+            capturedEndDate.Value.Date.Should().Be(DateTime.Now.Date);
+        }
+
+        [Fact]
+        public async Task EpisodeUnwatched_LastEpisode_ShouldClearDates()
+        {
+            // Arrange
+            var episodeMock = CreateMockEpisode(1, false); // Unwatched
+            var userMock = CreateMockUser("testuser");
+            var videoMock = CreateMockVideo(episodeMock.Object);
+            var userDataMock = CreateMockUserData(0); // No playback count
+            
+            var anime = new Anime
+            {
+                Id = 12345,
+                Title = "Test Anime",
+                NumEpisodes = 1,
+                MyListStatus = new MyListStatus
+                {
+                    Status = Status.Completed,
+                    NumEpisodesWatched = 1,
+                    StartDate = "2024-01-01",
+                    FinishDate = "2024-01-01"
+                }
+            };
+
+            _apiCallHelpersMock.Setup(x => x.GetAnime(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<string>()))
+                .ReturnsAsync(anime);
+
+            DateTime? capturedStartDate = null;
+            DateTime? capturedEndDate = null;
+            
+            _apiCallHelpersMock.Setup(x => x.UpdateAnime(
+                    It.IsAny<int>(),
+                    It.IsAny<int>(),
+                    It.IsAny<Status>(),
+                    It.IsAny<bool?>(),
+                    It.IsAny<int?>(),
+                    It.IsAny<DateTime?>(),
+                    It.IsAny<DateTime?>(),
+                    It.IsAny<string>(),
+                    It.IsAny<AnimeOfflineDatabaseHelpers.OfflineDatabaseResponse>(),
+                    It.IsAny<bool?>(),
+                    It.IsAny<string>()))
+                .Callback<int, int, Status, bool?, int?, DateTime?, DateTime?, string, AnimeOfflineDatabaseHelpers.OfflineDatabaseResponse, bool?, string>(
+                    (id, eps, status, rewatch, rewatchCount, start, end, altId, ids, isShow, user) =>
+                    {
+                        capturedStartDate = start;
+                        capturedEndDate = end;
+                    })
+                .ReturnsAsync(new UpdateAnimeStatusResponse());
+
+            var eventArgs = new VideoUserDataSavedEventArgs(
+                UserDataSaveReason.Playback,
+                userMock.Object,
+                videoMock.Object,
+                userDataMock.Object
+            );
+
+            // Act
+            // Call the private method via reflection (or make it public for testing)
+            var method = typeof(ShokoMalPlugin).GetMethod("OnEpisodeWatchedAsync", 
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            await (Task)method.Invoke(_plugin, new object[] { null, eventArgs });
+
+            // Assert
+            capturedStartDate.Should().Be(DateTime.MinValue, "Should clear start date");
+            capturedEndDate.Should().Be(DateTime.MinValue, "Should clear end date");
+        }
+
+        [Fact]
+        public async Task RewatchCompletion_ShouldPreserveOriginalDates()
+        {
+            // Arrange  
+            var episodeMock = CreateMockEpisode(12, true); // Last episode
+            var userMock = CreateMockUser("testuser");
+            var videoMock = CreateMockVideo(episodeMock.Object);
+            var userDataMock = CreateMockUserData(2); // Rewatch
+            
+            var anime = new Anime
+            {
+                Id = 12345,
+                Title = "Test Anime",
+                NumEpisodes = 12,
+                MyListStatus = new MyListStatus
+                {
+                    Status = Status.Watching,
+                    NumEpisodesWatched = 11,
+                    StartDate = "2023-01-01",  // Original start date
+                    FinishDate = "2023-02-01",  // Original end date (from first completion)
+                    IsRewatching = true
+                }
+            };
+
+            _apiCallHelpersMock.Setup(x => x.GetAnime(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<string>()))
+                .ReturnsAsync(anime);
+
+            DateTime? capturedStartDate = null;
+            DateTime? capturedEndDate = null;
+            Status? capturedStatus = null;
+            bool? capturedRewatching = null;
+            
+            _apiCallHelpersMock.Setup(x => x.UpdateAnime(
+                    It.IsAny<int>(),
+                    It.IsAny<int>(),
+                    It.IsAny<Status>(),
+                    It.IsAny<bool?>(),
+                    It.IsAny<int?>(),
+                    It.IsAny<DateTime?>(),
+                    It.IsAny<DateTime?>(),
+                    It.IsAny<string>(),
+                    It.IsAny<AnimeOfflineDatabaseHelpers.OfflineDatabaseResponse>(),
+                    It.IsAny<bool?>(),
+                    It.IsAny<string>()))
+                .Callback<int, int, Status, bool?, int?, DateTime?, DateTime?, string, AnimeOfflineDatabaseHelpers.OfflineDatabaseResponse, bool?, string>(
+                    (id, eps, status, rewatch, rewatchCount, start, end, altId, ids, isShow, user) =>
+                    {
+                        capturedStartDate = start;
+                        capturedEndDate = end;
+                        capturedStatus = status;
+                        capturedRewatching = rewatch;
+                    })
+                .ReturnsAsync(new UpdateAnimeStatusResponse());
+
+            var eventArgs = new VideoUserDataSavedEventArgs(
+                UserDataSaveReason.Playback,
+                userMock.Object,
+                videoMock.Object,
+                userDataMock.Object
+            );
+
+            // Act
+            // Call the private method via reflection (or make it public for testing)
+            var method = typeof(ShokoMalPlugin).GetMethod("OnEpisodeWatchedAsync", 
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            await (Task)method.Invoke(_plugin, new object[] { null, eventArgs });
+
+            // Assert
+            capturedStatus.Should().Be(Status.Completed);
+            capturedRewatching.Should().BeFalse("Should clear rewatching flag when completing");
+            capturedStartDate.Should().BeNull("Should NOT change start date when completing rewatch");
+            capturedEndDate.Should().BeNull("Should NOT change end date when completing rewatch - preserve original completion date");
+        }
+
+        [Fact]
+        public async Task Rewatch_CompletedSeries_ShouldPreserveOriginalDates()
+        {
+            // Arrange
+            var episodeMock = CreateMockEpisode(1, true);
+            var userMock = CreateMockUser("testuser");
+            var videoMock = CreateMockVideo(episodeMock.Object);
+            var userDataMock = CreateMockUserData(2); // Rewatch (playback count > 1)
+            
+            var anime = new Anime
+            {
+                Id = 12345,
+                Title = "Test Anime",
+                NumEpisodes = 12,
+                MyListStatus = new MyListStatus
+                {
+                    Status = Status.Completed,
+                    NumEpisodesWatched = 12,
+                    StartDate = "2023-01-01",
+                    FinishDate = "2023-02-01",
+                    IsRewatching = false
+                }
+            };
+
+            _apiCallHelpersMock.Setup(x => x.GetAnime(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<string>()))
+                .ReturnsAsync(anime);
+
+            DateTime? capturedStartDate = null;
+            DateTime? capturedEndDate = null;
+            bool? capturedRewatching = null;
+            
+            _apiCallHelpersMock.Setup(x => x.UpdateAnime(
+                    It.IsAny<int>(),
+                    It.IsAny<int>(),
+                    It.IsAny<Status>(),
+                    It.IsAny<bool?>(),
+                    It.IsAny<int?>(),
+                    It.IsAny<DateTime?>(),
+                    It.IsAny<DateTime?>(),
+                    It.IsAny<string>(),
+                    It.IsAny<AnimeOfflineDatabaseHelpers.OfflineDatabaseResponse>(),
+                    It.IsAny<bool?>(),
+                    It.IsAny<string>()))
+                .Callback<int, int, Status, bool?, int?, DateTime?, DateTime?, string, AnimeOfflineDatabaseHelpers.OfflineDatabaseResponse, bool?, string>(
+                    (id, eps, status, rewatch, rewatchCount, start, end, altId, ids, isShow, user) =>
+                    {
+                        capturedStartDate = start;
+                        capturedEndDate = end;
+                        capturedRewatching = rewatch;
+                    })
+                .ReturnsAsync(new UpdateAnimeStatusResponse());
+
+            var eventArgs = new VideoUserDataSavedEventArgs(
+                UserDataSaveReason.Playback,
+                userMock.Object,
+                videoMock.Object,
+                userDataMock.Object
+            );
+
+            // Act
+            // Call the private method via reflection (or make it public for testing)
+            var method = typeof(ShokoMalPlugin).GetMethod("OnEpisodeWatchedAsync", 
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            await (Task)method.Invoke(_plugin, new object[] { null, eventArgs });
+
+            // Assert
+            capturedRewatching.Should().BeTrue("Should set rewatching flag");
+            capturedStartDate.Should().BeNull("Should NOT change start date during rewatch - preserve original");
+            capturedEndDate.Should().BeNull("Should NOT change end date during rewatch - preserve original");
+        }
+
+        private Mock<IShokoEpisode> CreateMockEpisode(int episodeNumber, bool isWatched)
+        {
+            var episodeMock = new Mock<IShokoEpisode>();
+            var seriesMock = CreateMockSeries("Test Anime", 12);
+            
+            episodeMock.Setup(x => x.Type).Returns(EpisodeType.Episode);
+            episodeMock.Setup(x => x.EpisodeNumber).Returns(episodeNumber);
+            episodeMock.Setup(x => x.AnidbEpisodeID).Returns(100000 + episodeNumber);
+            episodeMock.Setup(x => x.Series).Returns(seriesMock.Object);
+            
+            return episodeMock;
+        }
+
+        private Mock<IShokoSeries> CreateMockSeries(string title, int episodeCount)
+        {
+            var seriesMock = new Mock<IShokoSeries>();
+            var titleMock = new Mock<AnimeTitle>();
+            titleMock.Setup(x => x.Title).Returns(title);
+            
+            seriesMock.Setup(x => x.PreferredTitle).Returns(title);
+            seriesMock.Setup(x => x.Titles).Returns(new List<AnimeTitle> { titleMock.Object });
+            seriesMock.Setup(x => x.EpisodeCounts).Returns(new EpisodeCounts 
+            { 
+                Episodes = episodeCount,
+                Specials = 0
+            });
+            seriesMock.Setup(x => x.AnidbAnimeID).Returns(12345);
+            seriesMock.Setup(x => x.AirDate).Returns((DateTime?)null);
+            
+            return seriesMock;
+        }
+
+        private Mock<IShokoUser> CreateMockUser(string username)
+        {
+            var userMock = new Mock<IShokoUser>();
+            userMock.Setup(x => x.Username).Returns(username);
+            userMock.Setup(x => x.ID).Returns(1);
+            return userMock;
+        }
+        
+        private Mock<IVideo> CreateMockVideo(IShokoEpisode episode)
+        {
+            var videoMock = new Mock<IVideo>();
+            var mediaInfoMock = new Mock<IMediaInfo>();
+            mediaInfoMock.Setup(x => x.Title).Returns("Test Video");
+            
+            videoMock.Setup(x => x.Episodes).Returns(new List<IShokoEpisode> { episode });
+            videoMock.Setup(x => x.MediaInfo).Returns(mediaInfoMock.Object);
+            
+            return videoMock;
+        }
+        
+        private Mock<IVideoUserData> CreateMockUserData(int playbackCount)
+        {
+            var userDataMock = new Mock<IVideoUserData>();
+            // IVideoUserData doesn't have WatchedCount, we'll use the playbackCount parameter differently
+            // For testing purposes, we can check if it's > 1 to determine if it's a rewatch
+            return userDataMock;
+        }
+    }
+}
