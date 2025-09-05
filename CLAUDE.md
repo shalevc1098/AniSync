@@ -9,7 +9,7 @@ This is a Shoko plugin that syncs anime watch data to MyAnimeList (MAL). The plu
 ## Build Commands
 
 ```bash
-# Build the project
+# Build the project (automatically copies to Shoko plugins folder)
 dotnet build
 
 # Clean and rebuild
@@ -20,7 +20,15 @@ dotnet build -c Release
 
 # Publish the plugin
 dotnet publish -c Release
+
+# Run tests
+dotnet test
+
+# Run tests with coverage
+dotnet test --collect:"XPlat Code Coverage"
 ```
+
+**Note**: The build process automatically copies the plugin DLL to `%ProgramData%\ShokoServer\plugins\` on Windows.
 
 ## Project Architecture
 
@@ -97,6 +105,7 @@ Contains data models for MAL API responses including `Anime`, `MyListStatus`, `R
 - Group related changes into single commits
 - Add files in logical batches before committing
 - Do not add copyright notices or signatures to commits
+- **IMPORTANT**: Never commit automatically - always wait for explicit user request
 - Examples:
   - "Added caching for MAL API search results"
   - "Fixed async/await pattern in FetchIdFromProvider"
