@@ -35,13 +35,13 @@ namespace Shoko.AniSync.Helpers
             //_simklApiCalls = simklApiCalls;
         }
 
-        public async Task<List<Anime>> SearchAnime(string query)
+        public async Task<List<Anime>> SearchAnime(string query, string shokoUsername = null)
         {
             bool updateNsfw = Plugin.Instance!.Config.UpdateNsfw;
             if (_malApiCalls != null)
             {
                 // TODO: if not using "status" and "num_episodes", remove
-                return await _malApiCalls.SearchAnime(query, new[] { "id", "title", "alternative_titles", "num_episodes", "status", "start_date" }, updateNsfw);
+                return await _malApiCalls.SearchAnime(query, new[] { "id", "title", "alternative_titles", "num_episodes", "status", "start_date" }, updateNsfw, shokoUsername);
             }
 
             //if (_aniListApiCalls != null)
@@ -75,11 +75,11 @@ namespace Shoko.AniSync.Helpers
             return null;
         }
 
-        public async Task<Anime> GetAnime(int id, string? alternativeId = null, bool getRelated = false)
+        public async Task<Anime> GetAnime(int id, string? alternativeId = null, bool getRelated = false, string shokoUsername = null)
         {
             if (_malApiCalls != null)
             {
-                return await _malApiCalls.GetAnime(id, new[] { "title", "related_anime", "my_list_status", "num_episodes" });
+                return await _malApiCalls.GetAnime(id, new[] { "title", "related_anime", "my_list_status", "num_episodes" }, shokoUsername);
             }
 
             //if (_aniListApiCalls != null)
@@ -120,11 +120,11 @@ namespace Shoko.AniSync.Helpers
         }
 
         public async Task<UpdateAnimeStatusResponse> UpdateAnime(int animeId, int numberOfWatchedEpisodes, Status status,
-            bool? isRewatching = null, int? numberOfTimesRewatched = null, DateTime? startDate = null, DateTime? endDate = null, string alternativeId = null, AnimeOfflineDatabaseHelpers.OfflineDatabaseResponse ids = null, bool? isShow = null)
+            bool? isRewatching = null, int? numberOfTimesRewatched = null, DateTime? startDate = null, DateTime? endDate = null, int? score = null, string alternativeId = null, AnimeOfflineDatabaseHelpers.OfflineDatabaseResponse ids = null, bool? isShow = null, string shokoUsername = null)
         {
             if (_malApiCalls != null)
             {
-                return await _malApiCalls.UpdateAnimeStatus(animeId, numberOfWatchedEpisodes, status, isRewatching, numberOfTimesRewatched, startDate, endDate);
+                return await _malApiCalls.UpdateAnimeStatus(animeId, numberOfWatchedEpisodes, status, isRewatching, numberOfTimesRewatched, startDate, endDate, score, shokoUsername);
             }
 
             //if (_aniListApiCalls != null)
@@ -291,11 +291,11 @@ namespace Shoko.AniSync.Helpers
 
             return null;
         }
-        public async Task<MalApiCalls.User> GetUser()
+        public async Task<MalApiCalls.User> GetUser(string shokoUsername = null)
         {
             if (_malApiCalls != null)
             {
-                return await _malApiCalls.GetUserInformation();
+                return await _malApiCalls.GetUserInformation(shokoUsername);
             }
 
             //if (_aniListApiCalls != null)
