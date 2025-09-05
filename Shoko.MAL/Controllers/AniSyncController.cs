@@ -185,17 +185,14 @@ namespace Shoko.AniSync.Controllers
         [Route("login")]
         public IActionResult Login()
         {
-            // Get current user to pass to the form
+            // Get current user
             var currentUser = GetCurrentShokoUser();
             
-            // If no current user, try to get from config
-            if (string.IsNullOrEmpty(currentUser))
+            // If no current user found
+            if (string.IsNullOrEmpty(currentUser) || currentUser == "None")
             {
-                var config = Config.GetConfig(_applicationPaths);
-                if (config?.Auths?.Any() == true)
-                {
-                    currentUser = config.Auths.Keys.FirstOrDefault();
-                }
+                var errorHtml = GetLoginErrorHtml("No Shoko user detected. Please ensure you're logged into Shoko.");
+                return Content(errorHtml, "text/html");
             }
             
             var html = GetLoginHtml(currentUser);
@@ -227,7 +224,7 @@ namespace Shoko.AniSync.Controllers
             var isAuthenticated = !string.IsNullOrEmpty(userAuth?.AccessToken);
             var malUsername = userAuth?.Username ?? "Not Connected";
             
-            var html = GetSettingsHtml(isAuthenticated, malUsername, config);
+            var html = GetSettingsHtml(isAuthenticated, malUsername, config, shokoUsername);
             return Content(html, "text/html");
         }
         
@@ -237,16 +234,52 @@ namespace Shoko.AniSync.Controllers
         public IActionResult Settings([FromForm] SettingsViewModel model)
         {
             var config = Config.GetConfig(_applicationPaths);
+            var shokoUsername = GetCurrentShokoUser();
             
-            // Update config with new settings
-            config.EnableAutoSync = model.EnableAutoSync;
-            config.SyncOnlyCompleted = model.SyncOnlyCompleted;
-            config.EnableRewatchDetection = model.EnableRewatchDetection;
-            config.AllowRollback = model.AllowRollback;
-            config.TitleMatchThreshold = model.TitleMatchThreshold;
-            config.UseFuzzyMatching = model.UseFuzzyMatching;
-            config.SyncDelaySeconds = model.SyncDelaySeconds;
-            config.EnableDebugLogging = model.EnableDebugLogging;
+            if (!string.IsNullOrEmpty(shokoUsername))
+            {
+                // Get or create user auth for this Shoko user
+                var userAuth = config.GetAuthForShokoUser(shokoUsername);
+                if (userAuth != null)
+                {
+                    // Update user-specific settings
+                    userAuth.UpdateNsfw = model.UpdateNsfw;
+                    userAuth.EnableAutoSync = model.EnableAutoSync;
+                    userAuth.SyncOnlyCompleted = model.SyncOnlyCompleted;
+                    userAuth.EnableRewatchDetection = model.EnableRewatchDetection;
+                    userAuth.AllowRollback = model.AllowRollback;
+                    userAuth.TitleMatchThreshold = model.TitleMatchThreshold;
+                    userAuth.UseFuzzyMatching = model.UseFuzzyMatching;
+                    userAuth.SyncDelaySeconds = model.SyncDelaySeconds;
+                    userAuth.EnableDebugLogging = model.EnableDebugLogging;
+                }
+                else
+                {
+                    // No auth exists, update global settings
+                    config.UpdateNsfw = model.UpdateNsfw;
+                    config.EnableAutoSync = model.EnableAutoSync;
+                    config.SyncOnlyCompleted = model.SyncOnlyCompleted;
+                    config.EnableRewatchDetection = model.EnableRewatchDetection;
+                    config.AllowRollback = model.AllowRollback;
+                    config.TitleMatchThreshold = model.TitleMatchThreshold;
+                    config.UseFuzzyMatching = model.UseFuzzyMatching;
+                    config.SyncDelaySeconds = model.SyncDelaySeconds;
+                    config.EnableDebugLogging = model.EnableDebugLogging;
+                }
+            }
+            else
+            {
+                // No user context, update global settings
+                config.UpdateNsfw = model.UpdateNsfw;
+                config.EnableAutoSync = model.EnableAutoSync;
+                config.SyncOnlyCompleted = model.SyncOnlyCompleted;
+                config.EnableRewatchDetection = model.EnableRewatchDetection;
+                config.AllowRollback = model.AllowRollback;
+                config.TitleMatchThreshold = model.TitleMatchThreshold;
+                config.UseFuzzyMatching = model.UseFuzzyMatching;
+                config.SyncDelaySeconds = model.SyncDelaySeconds;
+                config.EnableDebugLogging = model.EnableDebugLogging;
+            }
             
             config.Save();
             
@@ -272,54 +305,30 @@ namespace Shoko.AniSync.Controllers
         // OAuth flow initiation
         [HttpGet]
         [Route("Auth")]
-        public IActionResult Auth(string username = null)
+        public IActionResult Auth()
         {
-            // Try to get username from query parameter first (passed from form)
-            // This is needed because browser GET requests don't include API key headers
-            var currentUser = username;
+            // Always get current user from Shoko context
+            var currentUser = GetCurrentShokoUser();
             
-            // If not provided, try to get from API
-            if (string.IsNullOrEmpty(currentUser))
+            // If no user found, show error
+            if (string.IsNullOrEmpty(currentUser) || currentUser == "None")
             {
-                currentUser = GetCurrentShokoUser();
+                _logger.LogError("No Shoko user found for OAuth flow.");
+                return Redirect("/anisync/login?error=Not+logged+into+Shoko");
             }
             
-            // If still not found, check config for any authenticated users
-            if (string.IsNullOrEmpty(currentUser))
-            {
-                var config = Config.GetConfig(_applicationPaths);
-                if (config?.Auths?.Any() == true)
-                {
-                    // Use the first authenticated Shoko user as fallback
-                    currentUser = config.Auths.Keys.FirstOrDefault();
-                    if (!string.IsNullOrEmpty(currentUser))
-                    {
-                        _logger.LogInformation("Using existing Shoko user from config: {Username}", currentUser);
-                    }
-                }
-            }
+            // Encode the username in the state parameter for OAuth flow
+            var state = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(currentUser));
+            _logger.LogInformation("Starting OAuth flow for user: {Username}", currentUser);
             
-            string state = null;
-            if (!string.IsNullOrEmpty(currentUser))
+            // Also try to store in session as backup
+            try
             {
-                // Encode the username in the state parameter for OAuth flow
-                state = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(currentUser));
-                _logger.LogInformation("Starting OAuth flow for user: {Username}", currentUser);
-                
-                // Also try to store in session as backup
-                try
-                {
-                    HttpContext.Session?.SetString("PendingAuthUser", currentUser);
-                }
-                catch (InvalidOperationException)
-                {
-                    _logger.LogDebug("Session not configured, relying on state parameter");
-                }
+                HttpContext.Session?.SetString("PendingAuthUser", currentUser);
             }
-            else
+            catch (InvalidOperationException)
             {
-                _logger.LogError("No user found for OAuth flow. Please specify username parameter.");
-                return Redirect("/anisync/login?error=No+user+specified");
+                _logger.LogDebug("Session not configured, relying on state parameter");
             }
             
             var authUrl = BuildAuthorizeRequestUrl(ApiName.Mal, state);
@@ -702,18 +711,32 @@ namespace Shoko.AniSync.Controllers
             return GetLayout("Dashboard", isAuthenticated, username, content);
         }
         
-        private string GetLoginHtml(string currentUser = null)
+        private string GetLoginHtml(string currentUser)
         {
             var content = LoadEmbeddedResource("login.html");
             
-            // Add hidden username field if we have a current user
-            if (!string.IsNullOrEmpty(currentUser))
-            {
-                content = content.Replace("<form action='/anisync/auth' method='get'>",
-                    $"<form action='/anisync/auth' method='get'>\n        <input type='hidden' name='username' value='{currentUser}' />");
-            }
+            // Replace the username display
+            content = content.Replace("{CURRENT_USER}", currentUser);
             
-            return GetLayout("Login", false, "Guest", content);
+            return GetLayout("Login", false, currentUser, content);
+        }
+        
+        private string GetLoginErrorHtml(string errorMessage)
+        {
+            var content = $@"<div class='card' style='max-width: 500px; margin: 4rem auto;'>
+                <h1 class='card-title' style='text-align: center;'>⚠️ Authentication Error</h1>
+                <div class='alert alert-danger' style='margin: 2rem 0;'>
+                    {errorMessage}
+                </div>
+                <p style='text-align: center;'>
+                    Please ensure you are logged into Shoko Server and try again.
+                </p>
+                <div style='text-align: center;'>
+                    <a href='/anisync' class='btn btn-secondary'>Go to Dashboard</a>
+                </div>
+            </div>";
+            
+            return GetLayout("Error", false, "Guest", content);
         }
         
         private string GetLayout(string title, bool isAuthenticated, string username, string content)
@@ -752,24 +775,53 @@ namespace Shoko.AniSync.Controllers
                 .Replace("{CONTENT}", content);
         }
         
-        private string GetSettingsHtml(bool isAuthenticated, string username, Config config)
+        private string GetSettingsHtml(bool isAuthenticated, string username, Config config, string shokoUsername)
         {
             var content = LoadEmbeddedResource("settings.html");
             
+            // Get user-specific settings if available
+            bool updateNsfw = config?.GetUpdateNsfw(shokoUsername) ?? false;
+            bool enableAutoSync = config?.GetEnableAutoSync(shokoUsername) ?? true;
+            bool syncOnlyCompleted = config?.GetSyncOnlyCompleted(shokoUsername) ?? true;
+            bool enableRewatchDetection = config?.GetEnableRewatchDetection(shokoUsername) ?? true;
+            bool allowRollback = config?.GetAllowRollback(shokoUsername) ?? false;
+            double titleMatchThreshold = config?.GetTitleMatchThreshold(shokoUsername) ?? 0.8;
+            bool useFuzzyMatching = config?.GetUseFuzzyMatching(shokoUsername) ?? true;
+            int syncDelaySeconds = config?.GetSyncDelaySeconds(shokoUsername) ?? 5;
+            bool enableDebugLogging = config?.GetEnableDebugLogging(shokoUsername) ?? false;
+            
+            // Check if user has custom settings
+            var userAuth = config?.GetAuthForShokoUser(shokoUsername);
+            bool hasUserSettings = userAuth != null && (
+                userAuth.UpdateNsfw.HasValue ||
+                userAuth.EnableAutoSync.HasValue ||
+                userAuth.SyncOnlyCompleted.HasValue ||
+                userAuth.EnableRewatchDetection.HasValue ||
+                userAuth.AllowRollback.HasValue ||
+                userAuth.TitleMatchThreshold.HasValue ||
+                userAuth.UseFuzzyMatching.HasValue ||
+                userAuth.SyncDelaySeconds.HasValue ||
+                userAuth.EnableDebugLogging.HasValue
+            );
+            
             // Replace placeholders with actual values
             content = content
-                .Replace("{ENABLE_AUTO_SYNC_CHECKED}", (config?.EnableAutoSync ?? true) ? "checked" : "")
-                .Replace("{SYNC_ONLY_COMPLETED_CHECKED}", (config?.SyncOnlyCompleted ?? true) ? "checked" : "")
-                .Replace("{ENABLE_REWATCH_DETECTION_CHECKED}", (config?.EnableRewatchDetection ?? true) ? "checked" : "")
-                .Replace("{ALLOW_ROLLBACK_CHECKED}", (config?.AllowRollback ?? false) ? "checked" : "")
-                .Replace("{TITLE_MATCH_THRESHOLD}", (config?.TitleMatchThreshold ?? 0.8).ToString("F1"))
-                .Replace("{USE_FUZZY_MATCHING_CHECKED}", (config?.UseFuzzyMatching ?? true) ? "checked" : "")
-                .Replace("{SYNC_DELAY_SECONDS}", (config?.SyncDelaySeconds ?? 5).ToString())
-                .Replace("{ENABLE_DEBUG_LOGGING_CHECKED}", (config?.EnableDebugLogging ?? false) ? "checked" : "")
+                .Replace("{UPDATE_NSFW_CHECKED}", updateNsfw ? "checked" : "")
+                .Replace("{ENABLE_AUTO_SYNC_CHECKED}", enableAutoSync ? "checked" : "")
+                .Replace("{SYNC_ONLY_COMPLETED_CHECKED}", syncOnlyCompleted ? "checked" : "")
+                .Replace("{ENABLE_REWATCH_DETECTION_CHECKED}", enableRewatchDetection ? "checked" : "")
+                .Replace("{ALLOW_ROLLBACK_CHECKED}", allowRollback ? "checked" : "")
+                .Replace("{TITLE_MATCH_THRESHOLD}", titleMatchThreshold.ToString("F1"))
+                .Replace("{USE_FUZZY_MATCHING_CHECKED}", useFuzzyMatching ? "checked" : "")
+                .Replace("{SYNC_DELAY_SECONDS}", syncDelaySeconds.ToString())
+                .Replace("{ENABLE_DEBUG_LOGGING_CHECKED}", enableDebugLogging ? "checked" : "")
                 .Replace("{CONNECTION_STATUS}", isAuthenticated ? "Connected" : "Disconnected")
                 .Replace("{CONNECTION_STATUS_CLASS}", isAuthenticated ? "status-connected" : "status-disconnected")
                 .Replace("{USERNAME}", username)
-                .Replace("{LAST_REFRESH}", "Not available");
+                .Replace("{LAST_REFRESH}", "Not available")
+                .Replace("{USER_SETTINGS_INFO}", hasUserSettings ? 
+                    "<div class=\"alert alert-info\">Using personalized settings for your account</div>" : 
+                    "<div class=\"alert alert-secondary\">Using global default settings</div>");
             
             return GetLayout("Settings", isAuthenticated, username, content);
         }

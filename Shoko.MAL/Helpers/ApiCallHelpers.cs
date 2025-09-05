@@ -36,7 +36,9 @@ namespace Shoko.AniSync.Helpers
 
         public async Task<List<Anime>> SearchAnime(string query, string shokoUsername = null)
         {
-            bool updateNsfw = Plugin.Instance!.Config.UpdateNsfw;
+            bool updateNsfw = shokoUsername != null 
+                ? Plugin.Instance!.Config.GetUpdateNsfw(shokoUsername) 
+                : Plugin.Instance!.Config.UpdateNsfw;
             if (_malApiCalls != null)
             {
                 // TODO: if not using "status" and "num_episodes", remove
