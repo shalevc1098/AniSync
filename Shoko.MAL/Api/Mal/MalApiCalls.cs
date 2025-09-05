@@ -45,13 +45,13 @@ namespace Shoko.AniSync.Api
         /// <summary>
         /// Get a users information.
         /// </summary>
-        public async Task<User?> GetUserInformation()
+        public async Task<User?> GetUserInformation(string shokoUsername = null)
         {
             UrlBuilder url = new UrlBuilder
             {
                 Base = $"{ApiUrl}/users/@me"
             };
-            var apiCall = await _authApiCall.AuthenticatedApiCall(ApiName.Mal, AuthApiCall.CallType.GET, url.Build());
+            var apiCall = await _authApiCall.AuthenticatedApiCall(ApiName.Mal, AuthApiCall.CallType.GET, url.Build(), shokoUsername: shokoUsername);
             if (apiCall != null)
             {
                 StreamReader streamReader = new StreamReader(await apiCall.Content.ReadAsStreamAsync());
@@ -71,7 +71,7 @@ namespace Shoko.AniSync.Api
         /// <param name="query">Search by title.</param>
         /// <param name="fields">The fields you would like returned.</param>
         /// <returns>List of anime.</returns>
-        public async Task<List<Anime>> SearchAnime(string? query, string[]? fields, bool updateNsfw = false)
+        public async Task<List<Anime>> SearchAnime(string? query, string[]? fields, bool updateNsfw = false, string shokoUsername = null)
         {
             UrlBuilder url = new UrlBuilder
             {
@@ -100,7 +100,7 @@ namespace Shoko.AniSync.Api
 
             string builtUrl = url.Build();
             _logger.LogInformation($"Starting search for anime (GET {builtUrl})...");
-            var apiCall = await _authApiCall.AuthenticatedApiCall(ApiName.Mal, AuthApiCall.CallType.GET, builtUrl);
+            var apiCall = await _authApiCall.AuthenticatedApiCall(ApiName.Mal, AuthApiCall.CallType.GET, builtUrl, shokoUsername: shokoUsername);
             if (apiCall != null)
             {
                 StreamReader streamReader = new StreamReader(await apiCall.Content.ReadAsStreamAsync());
@@ -119,7 +119,7 @@ namespace Shoko.AniSync.Api
         /// Get an anime from the MAL database.
         /// </summary>
         /// <returns></returns>
-        public async Task<Anime> GetAnime(int animeId, string[]? fields = null)
+        public async Task<Anime> GetAnime(int animeId, string[]? fields = null, string shokoUsername = null)
         {
             UrlBuilder url = new UrlBuilder
             {
@@ -135,7 +135,7 @@ namespace Shoko.AniSync.Api
             _logger.LogInformation($"Retrieving an anime from MAL (GET {builtUrl})...");
             try
             {
-                var apiCall = await _authApiCall.AuthenticatedApiCall(ApiName.Mal, AuthApiCall.CallType.GET, builtUrl);
+                var apiCall = await _authApiCall.AuthenticatedApiCall(ApiName.Mal, AuthApiCall.CallType.GET, builtUrl, shokoUsername: shokoUsername);
                 if (apiCall != null)
                 {
                     StreamReader streamReader = new StreamReader(await apiCall.Content.ReadAsStreamAsync());
@@ -166,7 +166,7 @@ namespace Shoko.AniSync.Api
             Anime_id
         }
 
-        public async Task<List<UserAnimeListData>> GetUserAnimeList(Status? status = null, Sort? sort = null, int? idSearch = null)
+        public async Task<List<UserAnimeListData>> GetUserAnimeList(Status? status = null, Sort? sort = null, int? idSearch = null, string shokoUsername = null)
         {
             UrlBuilder url = new UrlBuilder
             {
@@ -190,7 +190,7 @@ namespace Shoko.AniSync.Api
             while (builtUrl != null)
             {
                 _logger.LogInformation($"Getting user anime list (GET {builtUrl})...");
-                var apiCall = await _authApiCall.AuthenticatedApiCall(ApiName.Mal, AuthApiCall.CallType.GET, builtUrl);
+                var apiCall = await _authApiCall.AuthenticatedApiCall(ApiName.Mal, AuthApiCall.CallType.GET, builtUrl, shokoUsername: shokoUsername);
                 if (apiCall != null)
                 {
                     StreamReader streamReader = new StreamReader(await apiCall.Content.ReadAsStreamAsync());
@@ -239,7 +239,7 @@ namespace Shoko.AniSync.Api
             return userAnimeList.Data.ToList();
         }
 
-        public async Task<UpdateAnimeStatusResponse> UpdateAnimeStatus(int animeId, int numberOfWatchedEpisodes, Status? status = null, bool? isRewatching = null, int? numberOfTimesRewatched = null, DateTime? startDate = null, DateTime? endDate = null)
+        public async Task<UpdateAnimeStatusResponse> UpdateAnimeStatus(int animeId, int numberOfWatchedEpisodes, Status? status = null, bool? isRewatching = null, int? numberOfTimesRewatched = null, DateTime? startDate = null, DateTime? endDate = null, int? score = null, string shokoUsername = null)
         {
             UrlBuilder url = new UrlBuilder
             {
@@ -271,12 +271,37 @@ namespace Shoko.AniSync.Api
 
             if (startDate != null)
             {
-                body.Add(new KeyValuePair<string, string>("start_date", startDate.Value.ToString("yyyy-MM-dd")));
+                // DateTime.MinValue is used as a special value to clear the date
+                if (startDate.Value == DateTime.MinValue)
+                {
+                    body.Add(new KeyValuePair<string, string>("start_date", ""));
+                }
+                else
+                {
+                    body.Add(new KeyValuePair<string, string>("start_date", startDate.Value.ToString("yyyy-MM-dd")));
+                }
             }
 
             if (endDate != null)
             {
-                body.Add(new KeyValuePair<string, string>("finish_date", endDate.Value.ToString("yyyy-MM-dd")));
+                // DateTime.MinValue is used as a special value to clear the date
+                if (endDate.Value == DateTime.MinValue)
+                {
+                    body.Add(new KeyValuePair<string, string>("finish_date", ""));
+                }
+                else
+                {
+                    body.Add(new KeyValuePair<string, string>("finish_date", endDate.Value.ToString("yyyy-MM-dd")));
+                }
+            }
+
+            if (score != null)
+            {
+                // MAL accepts scores from 0-10, where 0 means no score
+                if (score.Value >= 0 && score.Value <= 10)
+                {
+                    body.Add(new KeyValuePair<string, string>("score", score.Value.ToString()));
+                }
             }
 
             var builtUrl = url.Build();
@@ -284,7 +309,7 @@ namespace Shoko.AniSync.Api
             UpdateAnimeStatusResponse updateResponse;
             try
             {
-                var apiCall = await _authApiCall.AuthenticatedApiCall(ApiName.Mal, AuthApiCall.CallType.PUT, builtUrl, new FormUrlEncodedContent(body.ToArray()));
+                var apiCall = await _authApiCall.AuthenticatedApiCall(ApiName.Mal, AuthApiCall.CallType.PUT, builtUrl, new FormUrlEncodedContent(body.ToArray()), shokoUsername: shokoUsername);
 
                 if (apiCall != null)
                 {
