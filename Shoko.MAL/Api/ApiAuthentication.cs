@@ -1,5 +1,8 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 using Shoko.AniSync.Configuration;
+using Shoko.AniSync.Helpers;
+using Shoko.AniSync.Interfaces;
 using Shoko.AniSync.Models;
 using System;
 using System.Collections.Generic;
@@ -17,6 +20,7 @@ namespace Shoko.AniSync.Api
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly ILoggerFactory _loggerFactory;
         private readonly ILogger<ApiAuthentication> _logger;
+        private readonly IMemoryCache _memoryCache;
         private readonly ProviderApiAuth _providerApiAuth;
         private readonly string _authApiUrl;
         private readonly string _redirectUrl;
@@ -25,12 +29,13 @@ namespace Shoko.AniSync.Api
         private readonly string _clientId = "cb2cb041c1452a990a065d5e7ecdf89b";
         private readonly string _clientSecret = "REDACTED";
 
-        public ApiAuthentication(ApiName provider, IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory)
+        public ApiAuthentication(ApiName provider, IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory, IMemoryCache memoryCache = null)
         {
             _provider = provider;
             _httpClientFactory = httpClientFactory;
             _loggerFactory = loggerFactory;
             _logger = _loggerFactory.CreateLogger<ApiAuthentication>();
+            _memoryCache = memoryCache;
 
             _providerApiAuth =  new ProviderApiAuth()
             {
@@ -48,18 +53,23 @@ namespace Shoko.AniSync.Api
             _redirectUrl = "http://localhost:8111/AniSync/authCallback";
         }
 
-        public string BuildAuthorizeRequestUrl()
+        public string BuildAuthorizeRequestUrl(string state = null)
         {
             switch (_provider)
             {
                 case ApiName.Mal:
-                    return $"{_authApiUrl}/authorize?response_type=code&client_id={_providerApiAuth.ClientId}&code_challenge={_codeChallenge}&redirect_uri={_redirectUrl}";
+                    var url = $"{_authApiUrl}/authorize?response_type=code&client_id={_providerApiAuth.ClientId}&code_challenge={_codeChallenge}&redirect_uri={_redirectUrl}";
+                    if (!string.IsNullOrEmpty(state))
+                    {
+                        url += $"&state={Uri.EscapeDataString(state)}";
+                    }
+                    return url;
                 default:
                     throw new ArgumentOutOfRangeException();
             }
         }
 
-        public UserApiAuth GetToken(string? code = null, string? refreshToken = null)
+        public UserApiAuth GetToken(string? code = null, string? refreshToken = null, string? shokoUsername = null)
         {
             var client = _httpClientFactory.CreateClient();
 
@@ -106,35 +116,53 @@ namespace Shoko.AniSync.Api
                 Config? pluginConfig = Plugin.Instance.Config;
                 if (pluginConfig != null)
                 {
-                    var apiAuth = pluginConfig.UserApiAuth?.FirstOrDefault(item => item.Name == _provider);
-
                     UserApiAuth newUserApiAuth = new UserApiAuth
                     {
-                        Name = _provider,
                         AccessToken = tokenResponse.access_token
                     };
 
                     if (_provider is ApiName.Mal)
                     {
                         newUserApiAuth.RefreshToken = tokenResponse.refresh_token;
-                    }
-
-                    if (apiAuth != null)
-                    {
-                        apiAuth.AccessToken = tokenResponse.access_token;
-                        if (_provider is ApiName.Mal)
+                        
+                        // Need to temporarily save auth to make API call to get username
+                        // This will be properly saved later with the username
+                        
+                        try
                         {
-                            apiAuth.RefreshToken = tokenResponse.refresh_token;
+                            // Temporarily save auth to make API call
+                            if (!string.IsNullOrEmpty(shokoUsername))
+                            {
+                                pluginConfig.SetAuthForShokoUser(shokoUsername, _provider, newUserApiAuth);
+                                var malApi = new MalApiCalls(_httpClientFactory, _loggerFactory, _memoryCache ?? new MemoryCache(new MemoryCacheOptions()), new Delayer());
+                                var userInfo = malApi.GetUserInformation(shokoUsername).Result;
+                                if (userInfo != null)
+                                {
+                                    newUserApiAuth.Username = userInfo.Name;
+                                    _logger.LogInformation("Retrieved MAL username: {Username}", userInfo.Name);
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Failed to retrieve MAL username");
                         }
                     }
-                    else
-                    {
-                        var apiAuthList = pluginConfig.UserApiAuth!.ToList();
-                        apiAuthList.Add(newUserApiAuth);
-                        pluginConfig.UserApiAuth = [.. apiAuthList];
-                    }
 
-                    pluginConfig.Save();
+                    // Always try to get a Shoko username - either provided or error
+                    var userToLink = shokoUsername;
+                    if (string.IsNullOrEmpty(userToLink))
+                    {
+                        // No user specified - this should not happen in production
+                        // as authentication should provide the current user
+                        _logger.LogError("No Shoko user specified during authentication");
+                        throw new InvalidOperationException("Cannot authenticate without a Shoko user context");
+                    }
+                    
+                    newUserApiAuth.ShokoUsername = userToLink;
+                    pluginConfig.SetAuthForShokoUser(userToLink, _provider, newUserApiAuth);
+                    _logger.LogInformation("Linked MAL account {MalUser} to Shoko user {ShokoUser}", 
+                        newUserApiAuth.Username, userToLink);
                     return newUserApiAuth;
                 }
             }
@@ -142,6 +170,18 @@ namespace Shoko.AniSync.Api
             throw new AuthenticationException($"Could not retrieve {_provider} token: " + response.StatusCode + " - " + response.ReasonPhrase);
         }
 
+        public async Task RefreshAccessToken(string shokoUsername)
+        {
+            var config = Plugin.Instance?.Config;
+            var auth = config?.GetAuthForShokoUser(shokoUsername, _provider);
+            if (auth?.RefreshToken == null)
+            {
+                throw new InvalidOperationException("No refresh token available for user " + shokoUsername);
+            }
+            
+            GetToken(refreshToken: auth.RefreshToken, shokoUsername: shokoUsername);
+        }
+        
         private static string GenerateCodeChallenge()
         {
             return new string((from s in Enumerable.Repeat("AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz0123456789-._~", 128)
