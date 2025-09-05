@@ -51,5 +51,34 @@ namespace Shoko.AniSync.Configuration
         /// </summary>
         [JsonIgnore]
         public string ShokoUsername { get; set; }
+        
+        // Per-user settings (will use global defaults if null)
+        
+        [JsonProperty("update_nsfw")]
+        public bool? UpdateNsfw { get; set; }
+        
+        [JsonProperty("enable_auto_sync")]
+        public bool? EnableAutoSync { get; set; }
+        
+        [JsonProperty("sync_only_completed")]
+        public bool? SyncOnlyCompleted { get; set; }
+        
+        [JsonProperty("enable_rewatch_detection")]
+        public bool? EnableRewatchDetection { get; set; }
+        
+        [JsonProperty("allow_rollback")]
+        public bool? AllowRollback { get; set; }
+        
+        [JsonProperty("title_match_threshold")]
+        public double? TitleMatchThreshold { get; set; }
+        
+        [JsonProperty("use_fuzzy_matching")]
+        public bool? UseFuzzyMatching { get; set; }
+        
+        [JsonProperty("sync_delay_seconds")]
+        public int? SyncDelaySeconds { get; set; }
+        
+        [JsonProperty("enable_debug_logging")]
+        public bool? EnableDebugLogging { get; set; }
     }
 }

@@ -140,5 +140,61 @@ namespace Shoko.AniSync.Configuration
             var configPath = Path.Combine(applicationPaths.PluginsPath, "AniSync", "config.json");
             return new Config(configPath);
         }
+        
+        // Helper methods to get user-specific settings with fallback to global defaults
+        
+        public bool GetUpdateNsfw(string shokoUsername)
+        {
+            var userAuth = GetAuthForShokoUser(shokoUsername);
+            return userAuth?.UpdateNsfw ?? UpdateNsfw;
+        }
+        
+        public bool GetEnableAutoSync(string shokoUsername)
+        {
+            var userAuth = GetAuthForShokoUser(shokoUsername);
+            return userAuth?.EnableAutoSync ?? EnableAutoSync;
+        }
+        
+        public bool GetSyncOnlyCompleted(string shokoUsername)
+        {
+            var userAuth = GetAuthForShokoUser(shokoUsername);
+            return userAuth?.SyncOnlyCompleted ?? SyncOnlyCompleted;
+        }
+        
+        public bool GetEnableRewatchDetection(string shokoUsername)
+        {
+            var userAuth = GetAuthForShokoUser(shokoUsername);
+            return userAuth?.EnableRewatchDetection ?? EnableRewatchDetection;
+        }
+        
+        public bool GetAllowRollback(string shokoUsername)
+        {
+            var userAuth = GetAuthForShokoUser(shokoUsername);
+            return userAuth?.AllowRollback ?? AllowRollback;
+        }
+        
+        public double GetTitleMatchThreshold(string shokoUsername)
+        {
+            var userAuth = GetAuthForShokoUser(shokoUsername);
+            return userAuth?.TitleMatchThreshold ?? TitleMatchThreshold;
+        }
+        
+        public bool GetUseFuzzyMatching(string shokoUsername)
+        {
+            var userAuth = GetAuthForShokoUser(shokoUsername);
+            return userAuth?.UseFuzzyMatching ?? UseFuzzyMatching;
+        }
+        
+        public int GetSyncDelaySeconds(string shokoUsername)
+        {
+            var userAuth = GetAuthForShokoUser(shokoUsername);
+            return userAuth?.SyncDelaySeconds ?? SyncDelaySeconds;
+        }
+        
+        public bool GetEnableDebugLogging(string shokoUsername)
+        {
+            var userAuth = GetAuthForShokoUser(shokoUsername);
+            return userAuth?.EnableDebugLogging ?? EnableDebugLogging;
+        }
     }
 }
