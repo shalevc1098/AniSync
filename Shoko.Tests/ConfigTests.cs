@@ -130,8 +130,8 @@ public class ConfigTests : IDisposable
 
         // Assert
         result.Should().NotBeNull();
-        result.Username.Should().Be("mal_user");
-        result.AccessToken.Should().Be("token123");
+        result!.Username.Should().Be("mal_user");
+        result!.AccessToken.Should().Be("token123");
     }
 
     [Fact]
@@ -167,7 +167,7 @@ public class ConfigTests : IDisposable
 
         // Assert
         result.Should().NotBeNull();
-        result.Username.Should().Be("anilist_user");
+        result!.Username.Should().Be("anilist_user");
     }
 
     [Fact]
@@ -233,47 +233,47 @@ public class ConfigTests : IDisposable
         // Act
         _config.Save();
         var json = File.ReadAllText(_testConfigPath);
-        dynamic jsonObj = JsonConvert.DeserializeObject(json);
+        dynamic? jsonObj = JsonConvert.DeserializeObject(json);
 
         // Assert
-        ((string)jsonObj.shalev.providers.Mal.username).Should().Be("mal_user");
+        ((string)jsonObj!.shalev.providers.Mal.username).Should().Be("mal_user");
         ((string)jsonObj.shalev.providers.Mal.access_token).Should().Be("token123");
         ((string)jsonObj.shalev.providers.Mal.refresh_token).Should().Be("refresh123");
     }
 
     [Fact]
-    public void GetSyncStartDateOnlyFromEpisodeOne_Should_Return_Default_False_When_Not_Set()
+    public void GetSetStartDateFromAnyEpisode_Should_Return_Default_False_When_Not_Set()
     {
         // Act
-        var result = _config.GetSyncStartDateOnlyFromEpisodeOne("shalev");
+        var result = _config.GetSetStartDateFromAnyEpisode("shalev");
 
         // Assert
         result.Should().BeFalse();
     }
 
     [Fact]
-    public void GetSyncStartDateOnlyFromEpisodeOne_Should_Return_UserSetting_When_Set()
+    public void GetSetStartDateFromAnyEpisode_Should_Return_UserSetting_When_Set()
     {
         // Arrange
-        _config.SetUserSettings("shalev", new UserSettings { SyncStartDateOnlyFromEpisodeOne = true });
+        _config.SetUserSettings("shalev", new UserSettings { SetStartDateFromAnyEpisode = true });
 
         // Act
-        var result = _config.GetSyncStartDateOnlyFromEpisodeOne("shalev");
+        var result = _config.GetSetStartDateFromAnyEpisode("shalev");
 
         // Assert
         result.Should().BeTrue();
     }
 
     [Fact]
-    public void GetSyncStartDateOnlyFromEpisodeOne_Should_Preserve_Value_After_Save_And_Load()
+    public void GetSetStartDateFromAnyEpisode_Should_Preserve_Value_After_Save_And_Load()
     {
         // Arrange
-        _config.SetUserSettings("shalev", new UserSettings { SyncStartDateOnlyFromEpisodeOne = true });
+        _config.SetUserSettings("shalev", new UserSettings { SetStartDateFromAnyEpisode = true });
         _config.Save();
         
         // Act
         var loadedConfig = new Config(_testConfigPath);
-        var result = loadedConfig.GetSyncStartDateOnlyFromEpisodeOne("shalev");
+        var result = loadedConfig.GetSetStartDateFromAnyEpisode("shalev");
 
         // Assert
         result.Should().BeTrue();
