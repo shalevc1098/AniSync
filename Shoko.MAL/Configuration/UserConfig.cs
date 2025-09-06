@@ -59,8 +59,8 @@ namespace Shoko.AniSync.Configuration
         [JsonProperty("enable_debug_logging")]
         public bool? EnableDebugLogging { get; set; } = null;
 
-        [JsonProperty("sync_start_date_only_from_episode_one")]
-        public bool? SyncStartDateOnlyFromEpisodeOne { get; set; } = null;
+        [JsonProperty("set_start_date_from_any_episode")]
+        public bool? SetStartDateFromAnyEpisode { get; set; } = null;
         
         /// <summary>
         /// Creates UserSettings with default values instead of nulls
@@ -78,7 +78,7 @@ namespace Shoko.AniSync.Configuration
                 UseFuzzyMatching = true,
                 SyncDelaySeconds = 5,
                 EnableDebugLogging = false,
-                SyncStartDateOnlyFromEpisodeOne = false
+                SetStartDateFromAnyEpisode = false
             };
         }
     }

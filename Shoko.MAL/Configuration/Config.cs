@@ -50,8 +50,12 @@ namespace Shoko.AniSync.Configuration
         }
 
         // Get user config object for a specific user
-        private UserConfig? GetUserConfig(string username)
+        private UserConfig? GetUserConfig(string? username)
         {
+            if (string.IsNullOrEmpty(username))
+            {
+                return null;
+            }
             if (this.TryGetValue(username, out var userConfig))
             {
                 return userConfig;
@@ -66,7 +70,7 @@ namespace Shoko.AniSync.Configuration
         }
 
         // Get auth for a specific Shoko user and provider
-        public UserApiAuth? GetAuthForShokoUser(string shokoUsername, ApiName? provider = null)
+        public UserApiAuth? GetAuthForShokoUser(string? shokoUsername, ApiName? provider = null)
         {
             if (string.IsNullOrEmpty(shokoUsername)) return null;
 
@@ -177,64 +181,64 @@ namespace Shoko.AniSync.Configuration
         
         // Helper methods to get user-specific settings
         
-        public bool GetUpdateNsfw(string shokoUsername)
+        public bool GetUpdateNsfw(string? shokoUsername)
         {
             var userConfig = GetUserConfig(shokoUsername);
             return userConfig?.Settings?.UpdateNsfw ?? false;
         }
         
-        public bool GetEnableAutoSync(string shokoUsername)
+        public bool GetEnableAutoSync(string? shokoUsername)
         {
             var userConfig = GetUserConfig(shokoUsername);
             return userConfig?.Settings?.EnableAutoSync ?? true;
         }
         
-        public bool GetSyncOnlyCompleted(string shokoUsername)
+        public bool GetSyncOnlyCompleted(string? shokoUsername)
         {
             var userConfig = GetUserConfig(shokoUsername);
             return userConfig?.Settings?.SyncOnlyCompleted ?? true;
         }
         
-        public bool GetEnableRewatchDetection(string shokoUsername)
+        public bool GetEnableRewatchDetection(string? shokoUsername)
         {
             var userConfig = GetUserConfig(shokoUsername);
             return userConfig?.Settings?.EnableRewatchDetection ?? true;
         }
         
-        public bool GetAllowRollback(string shokoUsername)
+        public bool GetAllowRollback(string? shokoUsername)
         {
             var userConfig = GetUserConfig(shokoUsername);
             return userConfig?.Settings?.AllowRollback ?? false;
         }
         
-        public double GetTitleMatchThreshold(string shokoUsername)
+        public double GetTitleMatchThreshold(string? shokoUsername)
         {
             var userConfig = GetUserConfig(shokoUsername);
             return userConfig?.Settings?.TitleMatchThreshold ?? 0.8;
         }
         
-        public bool GetUseFuzzyMatching(string shokoUsername)
+        public bool GetUseFuzzyMatching(string? shokoUsername)
         {
             var userConfig = GetUserConfig(shokoUsername);
             return userConfig?.Settings?.UseFuzzyMatching ?? true;
         }
         
-        public int GetSyncDelaySeconds(string shokoUsername)
+        public int GetSyncDelaySeconds(string? shokoUsername)
         {
             var userConfig = GetUserConfig(shokoUsername);
             return userConfig?.Settings?.SyncDelaySeconds ?? 5;
         }
         
-        public bool GetEnableDebugLogging(string shokoUsername)
+        public bool GetEnableDebugLogging(string? shokoUsername)
         {
             var userConfig = GetUserConfig(shokoUsername);
             return userConfig?.Settings?.EnableDebugLogging ?? false;
         }
         
-        public bool GetSyncStartDateOnlyFromEpisodeOne(string shokoUsername)
+        public bool GetSetStartDateFromAnyEpisode(string? shokoUsername)
         {
             var userConfig = GetUserConfig(shokoUsername);
-            return userConfig?.Settings?.SyncStartDateOnlyFromEpisodeOne ?? false;
+            return userConfig?.Settings?.SetStartDateFromAnyEpisode ?? false;
         }
     }
 }
