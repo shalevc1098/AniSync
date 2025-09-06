@@ -36,7 +36,8 @@ public class ApiCallHelpersTests
             var result = await apiCallHelpers.SearchAnime("test");
 
             // Assert
-            result.Should().BeNull();
+            result.Should().NotBeNull();
+            result.Should().BeEmpty();
         }
         finally
         {
@@ -93,7 +94,8 @@ public class ApiCallHelpersTests
         var result = await apiCallHelpers.GetAnimeList(Status.Watching);
 
         // Assert
-        result.Should().BeNull();
+        result.Should().NotBeNull();
+        result.Should().BeEmpty();
     }
 
     [Fact]

@@ -40,9 +40,9 @@ namespace Shoko.Tests
             _config[shokoUsername].Providers.Should().ContainKey("Mal");
             var savedAuth = _config.GetAuthForShokoUser(shokoUsername, ApiName.Mal);
             savedAuth.Should().NotBeNull();
-            savedAuth.Username.Should().Be(auth.Username);
-            savedAuth.AccessToken.Should().Be(auth.AccessToken);
-            savedAuth.ShokoUsername.Should().Be(shokoUsername);
+            savedAuth!.Username.Should().Be(auth.Username);
+            savedAuth!.AccessToken.Should().Be(auth.AccessToken);
+            savedAuth!.ShokoUsername.Should().Be(shokoUsername);
         }
 
         [Fact]
@@ -62,8 +62,8 @@ namespace Shoko.Tests
 
             // Assert
             result.Should().NotBeNull();
-            result.Username.Should().Be("mal_user");
-            result.AccessToken.Should().Be("token123");
+            result!.Username.Should().Be("mal_user");
+            result!.AccessToken.Should().Be("token123");
         }
 
         [Fact]
@@ -97,9 +97,9 @@ namespace Shoko.Tests
             _config[user1].Providers.Should().HaveCount(2);
             _config[user2].Providers.Should().HaveCount(1);
             
-            _config.GetAuthForShokoUser(user1, ApiName.Mal).Username.Should().Be("shalev_mal");
-            _config.GetAuthForShokoUser(user1, ApiName.AniList).Username.Should().Be("shalev_anilist");
-            _config.GetAuthForShokoUser(user2, ApiName.Mal).Username.Should().Be("family_mal");
+            _config.GetAuthForShokoUser(user1, ApiName.Mal)!.Username.Should().Be("shalev_mal");
+            _config.GetAuthForShokoUser(user1, ApiName.AniList)!.Username.Should().Be("shalev_anilist");
+            _config.GetAuthForShokoUser(user2, ApiName.Mal)!.Username.Should().Be("family_mal");
             _config.GetAuthForShokoUser(user2, ApiName.AniList).Should().BeNull();
         }
 
@@ -150,9 +150,9 @@ namespace Shoko.Tests
             // Assert
             var result = _config.GetAuthForShokoUser(shokoUsername, ApiName.Mal);
             result.Should().NotBeNull();
-            result.Username.Should().Be("new_mal_user");
-            result.AccessToken.Should().Be("new_token");
-            result.RefreshToken.Should().Be("new_refresh");
+            result!.Username.Should().Be("new_mal_user");
+            result!.AccessToken.Should().Be("new_token");
+            result!.RefreshToken.Should().Be("new_refresh");
         }
 
         [Fact]
@@ -170,8 +170,8 @@ namespace Shoko.Tests
 
             // Assert
             loadedConfig.Should().HaveCount(2);
-            loadedConfig.GetAuthForShokoUser("user1", ApiName.Mal).Username.Should().Be("mal_user1");
-            loadedConfig.GetAuthForShokoUser("user2", ApiName.Mal).Username.Should().Be("mal_user2");
+            loadedConfig.GetAuthForShokoUser("user1", ApiName.Mal)!.Username.Should().Be("mal_user1");
+            loadedConfig.GetAuthForShokoUser("user2", ApiName.Mal)!.Username.Should().Be("mal_user2");
         }
 
         [Fact]
@@ -189,7 +189,7 @@ namespace Shoko.Tests
 
             // Assert
             result.Should().NotBeNull();
-            result.Username.Should().Be("mal_user");
+            result!.Username.Should().Be("mal_user");
         }
 
         [Fact]

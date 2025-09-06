@@ -44,9 +44,9 @@ namespace Shoko.Tests
         public void UpdateAnimeStatus_WithStartDate_FormatsCorrectly()
         {
             // Arrange
-            var animeId = 12345;
-            var episodes = 5;
-            var status = Status.Watching;
+            _ = 12345; // animeId
+            _ = 5; // episodes
+            _ = Status.Watching; // status
             var startDate = new DateTime(2024, 3, 15);
 
             // Act - We'll test the date formatting logic
@@ -130,8 +130,8 @@ namespace Shoko.Tests
         {
             // Arrange
             var existingStartDate = "2023-01-15";
-            var malEpisodeCount = 0;
-            var newEpisodeCount = 1;
+            _ = 0; // malEpisodeCount
+            _ = 1; // newEpisodeCount
 
             // Act
             var shouldSetNewStartDate = string.IsNullOrEmpty(existingStartDate);

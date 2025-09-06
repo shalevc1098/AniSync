@@ -83,9 +83,9 @@ public class ShokoMalPluginTests
         
         // Assert
         result.Should().NotBeNull();
-        result.Value.Year.Should().Be(year);
-        result.Value.Month.Should().Be(month);
-        result.Value.Day.Should().Be(day);
+        result!.Value.Year.Should().Be(year);
+        result!.Value.Month.Should().Be(month);
+        result!.Value.Day.Should().Be(day);
     }
 
     [Theory]
@@ -106,7 +106,7 @@ public class ShokoMalPluginTests
     [InlineData("")]
     [InlineData(" ")]
     [InlineData(null)]
-    public void ParseFullDate_Should_Return_Null_For_Empty_String(string dateString)
+    public void ParseFullDate_Should_Return_Null_For_Empty_String(string? dateString)
     {
         // Act
         var result = TestHelper.ParseFullDate(dateString);
@@ -149,7 +149,7 @@ public static class TestHelper
             System.Globalization.CompareOptions.IgnoreCase | System.Globalization.CompareOptions.IgnoreSymbols) == 0;
     }
 
-    public static DateTime? ParseFullDate(string dateString)
+    public static DateTime? ParseFullDate(string? dateString)
     {
         if (string.IsNullOrWhiteSpace(dateString))
             return null;

@@ -12,9 +12,9 @@ namespace Shoko.Tests
             // Test the logic for date preservation during rewatch
             
             // Scenario: User has completed anime with dates set
-            var originalStartDate = "2023-01-01";
-            var originalEndDate = "2023-02-01";
-            var isRewatching = true;
+            _ = "2023-01-01"; // originalStartDate
+            _ = "2023-02-01"; // originalEndDate
+            _ = true; // isRewatching
             
             // When starting a rewatch, dates should NOT be changed
             DateTime? newStartDate = null; // null means no change
@@ -49,7 +49,7 @@ namespace Shoko.Tests
             // Test that completing a rewatch doesn't overwrite the original end date
             
             var existingEndDate = "2023-02-01"; // Original completion date
-            var isCompletingRewatch = true;
+            _ = true; // isCompletingRewatch
             
             // Logic: Only set end date if it doesn't already exist
             bool shouldSetNewEndDate = string.IsNullOrEmpty(existingEndDate);

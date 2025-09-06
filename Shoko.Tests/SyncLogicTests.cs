@@ -209,6 +209,6 @@ public class TestablePlugin : ShokoMalPlugin
         // Use reflection to call private method
         var method = typeof(ShokoMalPlugin).GetMethod("DetermineWatchedState", 
             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        return (bool)method.Invoke(this, new object[] { e });
+        return (bool)method!.Invoke(this, new object[] { e })!;
     }
 }
