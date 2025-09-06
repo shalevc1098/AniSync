@@ -41,6 +41,9 @@ namespace Shoko.AniSync.Configuration
         [JsonProperty("sync_only_completed")]
         public bool? SyncOnlyCompleted { get; set; } = null;
 
+        [JsonProperty("set_start_date_from_any_episode")]
+        public bool? SetStartDateFromAnyEpisode { get; set; } = null;
+
         [JsonProperty("enable_rewatch_detection")]
         public bool? EnableRewatchDetection { get; set; } = null;
 
@@ -58,9 +61,6 @@ namespace Shoko.AniSync.Configuration
 
         [JsonProperty("enable_debug_logging")]
         public bool? EnableDebugLogging { get; set; } = null;
-
-        [JsonProperty("set_start_date_from_any_episode")]
-        public bool? SetStartDateFromAnyEpisode { get; set; } = null;
         
         /// <summary>
         /// Creates UserSettings with default values instead of nulls
@@ -72,13 +72,13 @@ namespace Shoko.AniSync.Configuration
                 UpdateNsfw = false,
                 EnableAutoSync = true,
                 SyncOnlyCompleted = true,
+                SetStartDateFromAnyEpisode = false,
                 EnableRewatchDetection = true,
                 AllowRollback = false,
                 TitleMatchThreshold = 0.8,
                 UseFuzzyMatching = true,
                 SyncDelaySeconds = 5,
-                EnableDebugLogging = false,
-                SetStartDateFromAnyEpisode = false
+                EnableDebugLogging = false
             };
         }
     }

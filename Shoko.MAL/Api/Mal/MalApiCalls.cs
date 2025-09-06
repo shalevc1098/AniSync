@@ -20,7 +20,6 @@ namespace Shoko.AniSync.Api
     {
         private readonly ILogger<MalApiCalls> _logger;
         private readonly AuthApiCall _authApiCall;
-        private readonly string _refreshTokenUrl = "https://myanimelist.net/v1/oauth2/token";
         private readonly string _apiBaseUrl = "https://api.myanimelist.net/";
         private readonly int _apiVersion = 2;
 
@@ -35,16 +34,16 @@ namespace Shoko.AniSync.Api
         public class User
         {
             [JsonPropertyName("id")] public int Id { get; set; }
-            [JsonPropertyName("name")] public string Name { get; set; }
-            [JsonPropertyName("location")] public string Location { get; set; }
+            [JsonPropertyName("name")] public string Name { get; set; } = string.Empty;
+            [JsonPropertyName("location")] public string? Location { get; set; }
             [JsonPropertyName("joined_at")] public DateTime JoinedAt { get; set; }
-            [JsonPropertyName("picture")] public string Picture { get; set; }
+            [JsonPropertyName("picture")] public string? Picture { get; set; }
         }
 
         /// <summary>
         /// Get a users information.
         /// </summary>
-        public async Task<User?> GetUserInformation(string shokoUsername = null)
+        public async Task<User?> GetUserInformation(string? shokoUsername = null)
         {
             UrlBuilder url = new UrlBuilder
             {
@@ -70,7 +69,7 @@ namespace Shoko.AniSync.Api
         /// <param name="query">Search by title.</param>
         /// <param name="fields">The fields you would like returned.</param>
         /// <returns>List of anime.</returns>
-        public async Task<List<Anime>> SearchAnime(string? query, string[]? fields, bool updateNsfw = false, string shokoUsername = null)
+        public async Task<List<Anime>> SearchAnime(string? query, string[]? fields, bool updateNsfw = false, string? shokoUsername = null)
         {
             UrlBuilder url = new UrlBuilder
             {
@@ -106,11 +105,11 @@ namespace Shoko.AniSync.Api
                 var animeList = JsonSerializer.Deserialize<SearchAnimeResponse>(await streamReader.ReadToEndAsync());
 
                 _logger.LogInformation("Search complete");
-                return animeList.Data.Select(list => list.Anime).ToList();
+                return animeList?.Data?.Select(list => list.Anime).Where(anime => anime != null).Cast<Anime>().ToList() ?? new List<Anime>();
             }
             else
             {
-                return null;
+                return new List<Anime>();
             }
         }
 
@@ -118,7 +117,7 @@ namespace Shoko.AniSync.Api
         /// Get an anime from the MAL database.
         /// </summary>
         /// <returns></returns>
-        public async Task<Anime> GetAnime(int animeId, string[]? fields = null, string shokoUsername = null)
+        public async Task<Anime?> GetAnime(int animeId, string[]? fields = null, string? shokoUsername = null)
         {
             UrlBuilder url = new UrlBuilder
             {
@@ -165,7 +164,7 @@ namespace Shoko.AniSync.Api
             Anime_id
         }
 
-        public async Task<List<UserAnimeListData>> GetUserAnimeList(Status? status = null, Sort? sort = null, int? idSearch = null, string shokoUsername = null)
+        public async Task<List<UserAnimeListData>> GetUserAnimeList(Status? status = null, Sort? sort = null, int? idSearch = null, string? shokoUsername = null)
         {
             UrlBuilder url = new UrlBuilder
             {
@@ -195,13 +194,13 @@ namespace Shoko.AniSync.Api
                     StreamReader streamReader = new StreamReader(await apiCall.Content.ReadAsStreamAsync());
                     var options = new JsonSerializerOptions();
                     options.Converters.Add(new JsonStringEnumConverter());
-                    UserAnimeList userAnimeListPage = JsonSerializer.Deserialize<UserAnimeList>(await streamReader.ReadToEndAsync(), options);
+                    UserAnimeList? userAnimeListPage = JsonSerializer.Deserialize<UserAnimeList>(await streamReader.ReadToEndAsync(), options);
 
                     if (userAnimeListPage?.Data != null && userAnimeListPage.Data.Count > 0)
                     {
                         if (idSearch != null)
                         {
-                            var foundAnime = userAnimeListPage.Data.FirstOrDefault(anime => anime.Anime.Id == idSearch);
+                            var foundAnime = userAnimeListPage.Data.FirstOrDefault(anime => anime.Anime?.Id == idSearch);
                             if (foundAnime != null)
                             {
                                 return new List<UserAnimeListData> { foundAnime };
@@ -212,25 +211,25 @@ namespace Shoko.AniSync.Api
                             userAnimeList.Data = userAnimeList.Data.Concat(userAnimeListPage.Data).ToList();
                         }
 
-                        if (userAnimeListPage.Paging.Next != null)
+                        if (userAnimeListPage.Paging?.Next != null)
                         {
-                            builtUrl = userAnimeListPage.Paging.Next;
+                            builtUrl = userAnimeListPage.Paging?.Next!;
                             _logger.LogInformation($"Additional pages found; waiting 2 seconds before calling again...");
                             Thread.Sleep(2000);
                         }
                         else
                         {
-                            builtUrl = null;
+                            builtUrl = null!;
                         }
                     }
                     else
                     {
-                        builtUrl = null;
+                        builtUrl = null!;
                     }
                 }
                 else
                 {
-                    return null;
+                    return new List<UserAnimeListData>();
                 }
             }
 
@@ -238,7 +237,7 @@ namespace Shoko.AniSync.Api
             return userAnimeList.Data.ToList();
         }
 
-        public async Task<UpdateAnimeStatusResponse> UpdateAnimeStatus(int animeId, int numberOfWatchedEpisodes, Status? status = null, bool? isRewatching = null, int? numberOfTimesRewatched = null, DateTime? startDate = null, DateTime? endDate = null, int? score = null, string shokoUsername = null)
+        public async Task<UpdateAnimeStatusResponse?> UpdateAnimeStatus(int animeId, int numberOfWatchedEpisodes, Status? status = null, bool? isRewatching = null, int? numberOfTimesRewatched = null, DateTime? startDate = null, DateTime? endDate = null, int? score = null, string? shokoUsername = null)
         {
             UrlBuilder url = new UrlBuilder
             {
@@ -305,7 +304,7 @@ namespace Shoko.AniSync.Api
 
             var builtUrl = url.Build();
 
-            UpdateAnimeStatusResponse updateResponse;
+            UpdateAnimeStatusResponse? updateResponse;
             try
             {
                 var apiCall = await _authApiCall.AuthenticatedApiCall(ApiName.Mal, AuthApiCall.CallType.PUT, builtUrl, new FormUrlEncodedContent(body.ToArray()), shokoUsername: shokoUsername);

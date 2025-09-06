@@ -18,6 +18,7 @@ namespace Shoko.AniSync.Models.ViewModels
     {
         public DateTime Timestamp { get; set; }
         public string AnimeName { get; set; } = string.Empty;
+        public int? AnimeId { get; set; }
         public int Episode { get; set; }
         public string Action { get; set; } = string.Empty; // watched, unwatched, completed, rewatch
         public bool Success { get; set; }
