@@ -118,12 +118,23 @@ namespace Shoko.AniSync.Api
                 {
                     UserApiAuth newUserApiAuth = new UserApiAuth
                     {
-                        AccessToken = tokenResponse.access_token ?? string.Empty
+                        AccessToken = tokenResponse.access_token ?? string.Empty,
+                        ExpiresAt = tokenResponse.expires_in.HasValue 
+                            ? DateTimeOffset.UtcNow.AddSeconds(tokenResponse.expires_in.Value).ToUnixTimeSeconds()
+                            : (long?)null
                     };
 
                     if (_provider is ApiName.Mal)
                     {
                         newUserApiAuth.RefreshToken = tokenResponse.refresh_token ?? string.Empty;
+                        
+                        // Log token expiration info
+                        if (tokenResponse.expires_in.HasValue)
+                        {
+                            _logger.LogInformation("Token expires in {Seconds} seconds ({Days} days)", 
+                                tokenResponse.expires_in.Value, 
+                                tokenResponse.expires_in.Value / 86400);
+                        }
                         
                         // Need to temporarily save auth to make API call to get username
                         // This will be properly saved later with the username
@@ -193,5 +204,6 @@ namespace Shoko.AniSync.Api
     {
         public string access_token { get; set; } = string.Empty;
         public string refresh_token { get; set; } = string.Empty;
+        public int? expires_in { get; set; }
     }
 }

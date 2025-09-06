@@ -293,7 +293,6 @@ namespace Shoko.AniSync
                     case Configuration.ApiName.Mal:
                         // Use the user-specific MAL API with their credentials
                         var malApiCalls = new MalApiCalls(_httpClientFactory, _loggerFactory, _memoryCache, new Delayer());
-                        // TODO: Set the user-specific auth token on malApiCalls
                         ApiCallHelpers = new ApiCallHelpers(malApiCalls: malApiCalls);
                         break;
                     default:
@@ -570,7 +569,9 @@ namespace Shoko.AniSync
                                     shokoUser?.Username ?? "Unknown User",
                                     userAuth?.Username ?? "Unknown MAL User",
                                     null,
-                                    details ?? ""
+                                    details ?? "",
+                                    anime.Id,
+                                    anime.MainPicture?.Medium ?? anime.MainPicture?.Large
                                 );
                             }
                             else
@@ -587,7 +588,9 @@ namespace Shoko.AniSync
                                     shokoUser?.Username ?? "Unknown User",
                                     userAuth?.Username ?? "Unknown MAL User",
                                     "Failed to update MAL",
-                                    null
+                                    null,
+                                    anime.Id,
+                                    anime.MainPicture?.Medium ?? anime.MainPicture?.Large
                                 );
                             }
                         }
@@ -647,7 +650,9 @@ namespace Shoko.AniSync
                                     shokoUser?.Username ?? "Unknown User",
                                     userAuth?.Username ?? "Unknown MAL User",
                                     null,
-                                    details ?? ""
+                                    details ?? "",
+                                    anime.Id,
+                                    anime.MainPicture?.Medium ?? anime.MainPicture?.Large
                                 );
                             }
                             else
@@ -664,7 +669,9 @@ namespace Shoko.AniSync
                                     shokoUser?.Username ?? "Unknown User",
                                     userAuth?.Username ?? "Unknown MAL User",
                                     "Failed to add to MAL",
-                                    null
+                                    null,
+                                    anime.Id,
+                                    anime.MainPicture?.Medium ?? anime.MainPicture?.Large
                                 );
                             }
                         }
