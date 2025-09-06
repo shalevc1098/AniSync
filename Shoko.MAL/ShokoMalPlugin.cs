@@ -440,20 +440,35 @@ namespace Shoko.AniSync
                             DateTime? startDate = null;
                             DateTime? endDate = null;
                             
-                            // Set start date if this is the first episode being watched (going from 0 to 1+)
-                            // AND the anime doesn't already have a start date in MAL
+                            // Set start date based on user preference
+                            // If SyncStartDateOnlyFromEpisodeOne is true, only set start date when watching episode 1
+                            // If false (default), set start date when going from 0 to any episode count
+                            bool syncOnlyFromEpisodeOne = Plugin.Instance.Config.GetSyncStartDateOnlyFromEpisodeOne(shokoUser?.Username);
+                            
                             if (malEpisodeCount == 0 && newEpisodeCount > 0)
                             {
-                                // Check if we already have dates in MAL before overwriting
-                                var existingStartDate = animeWithStatus?.MyListStatus?.StartDate;
-                                if (string.IsNullOrEmpty(existingStartDate))
+                                // Check if we should set the start date based on the setting
+                                bool shouldSetStartDate = !syncOnlyFromEpisodeOne || newEpisodeCount == 1;
+                                
+                                if (shouldSetStartDate)
                                 {
-                                    startDate = DateTime.Now.Date;
-                                    _logger.LogInformation("Setting start date to {Date} for {Title}", startDate.Value.ToString("yyyy-MM-dd"), anime.Title);
+                                    // Check if we already have dates in MAL before overwriting
+                                    var existingStartDate = animeWithStatus?.MyListStatus?.StartDate;
+                                    if (string.IsNullOrEmpty(existingStartDate))
+                                    {
+                                        startDate = DateTime.Now.Date;
+                                        _logger.LogInformation("Setting start date to {Date} for {Title} (started at episode {Episode})", 
+                                            startDate.Value.ToString("yyyy-MM-dd"), anime.Title, newEpisodeCount);
+                                    }
+                                    else
+                                    {
+                                        _logger.LogInformation("Keeping existing start date {Date} for {Title}", existingStartDate, anime.Title);
+                                    }
                                 }
                                 else
                                 {
-                                    _logger.LogInformation("Keeping existing start date {Date} for {Title}", existingStartDate, anime.Title);
+                                    _logger.LogInformation("Not setting start date for {Title} - started watching from episode {Episode} (SyncStartDateOnlyFromEpisodeOne is enabled)", 
+                                        anime.Title, newEpisodeCount);
                                 }
                             }
                             
