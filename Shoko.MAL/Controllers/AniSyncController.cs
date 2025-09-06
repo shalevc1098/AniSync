@@ -15,6 +15,7 @@ using System.IO;
 using System.Linq;
 using System.Security.Authentication;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace Shoko.AniSync.Controllers
@@ -873,6 +874,7 @@ namespace Shoko.AniSync.Controllers
                 {
                     Timestamp = entry.Timestamp,
                     AnimeName = entry.AnimeName ?? "Unknown",
+                    AnimeId = entry.AnimeId,
                     Episode = entry.EpisodeNumber,
                     Action = entry.Action?.ToLower() ?? "unknown",
                     Success = entry.Success,
@@ -882,6 +884,138 @@ namespace Shoko.AniSync.Controllers
             }
             
             return viewModelHistory;
+        }
+
+        /// <summary>
+        /// API endpoint to get user history in new format
+        /// </summary>
+        [HttpGet]
+        [Route("api/history")]
+        public async Task<IActionResult> GetUserHistoryApi(string? username = null, int? limit = null)
+        {
+            try
+            {
+                if (ShokoMalPlugin.SyncHistory == null)
+                {
+                    return Json(new { error = "Sync history not available" });
+                }
+
+                // If no username provided, get from apikey header
+                if (string.IsNullOrEmpty(username))
+                {
+                    username = GetCurrentShokoUser();
+                    _logger.LogInformation("Getting history for user from apikey: {Username}", username ?? "null");
+                }
+
+                if (string.IsNullOrEmpty(username))
+                {
+                    _logger.LogWarning("No username found from apikey header");
+                    // Return empty history instead of error
+                    return Json(new { 
+                        history = new List<object>(),
+                        total_syncs = 0,
+                        failed_syncs = 0,
+                        last_sync = (DateTime?)null
+                    });
+                }
+
+                var userHistory = await ShokoMalPlugin.SyncHistory.GetUserStatsAsync(username);
+                if (userHistory == null)
+                {
+                    return Json(new { 
+                        history = new List<object>(),
+                        total_syncs = 0,
+                        failed_syncs = 0,
+                        last_sync = (DateTime?)null
+                    });
+                }
+
+                var historyEntries = limit.HasValue 
+                    ? userHistory.History.Take(limit.Value).ToList()
+                    : userHistory.History;
+
+                var response = new {
+                    history = historyEntries,
+                    total_syncs = userHistory.TotalSyncs,
+                    failed_syncs = userHistory.FailedSyncs,
+                    last_sync = userHistory.LastSync
+                };
+                
+                var jsonOptions = new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                    WriteIndented = true
+                };
+                
+                var jsonString = JsonSerializer.Serialize(response, jsonOptions);
+                return Content(jsonString, "application/json");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving user history for {Username}", username);
+                return StatusCode(500, new { error = "Internal server error" });
+            }
+        }
+
+        /// <summary>
+        /// API endpoint to get all users' sync statistics
+        /// </summary>
+        [HttpGet]
+        [Route("api/stats")]
+        public async Task<IActionResult> GetSyncStatsApi()
+        {
+            try
+            {
+                if (ShokoMalPlugin.SyncHistory == null)
+                {
+                    return Json(new { error = "Sync history not available" });
+                }
+
+                var stats = await ShokoMalPlugin.SyncHistory.GetStatsAsync();
+                return Json(new {
+                    total_syncs = stats.TotalSyncs,
+                    successful_syncs = stats.SuccessfulSyncs,
+                    failed_syncs = stats.FailedSyncs,
+                    success_rate = stats.SuccessRate,
+                    last_sync_time = stats.LastSyncTime,
+                    syncs_by_user = stats.SyncsByUser,
+                    syncs_by_action = stats.SyncsByAction
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving sync statistics");
+                return StatusCode(500, new { error = "Internal server error" });
+            }
+        }
+
+        /// <summary>
+        /// API endpoint to clear history for a specific user
+        /// </summary>
+        [HttpDelete]
+        [Route("api/history/{username}")]
+        public async Task<IActionResult> ClearUserHistoryApi(string username)
+        {
+            try
+            {
+                if (ShokoMalPlugin.SyncHistory == null)
+                {
+                    return Json(new { error = "Sync history not available" });
+                }
+
+                if (string.IsNullOrEmpty(username))
+                {
+                    return BadRequest(new { error = "Username is required" });
+                }
+
+                await ShokoMalPlugin.SyncHistory.ClearHistoryAsync(username);
+                return Json(new { success = true, message = $"History cleared for user {username}" });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error clearing history for user {Username}", username);
+                return StatusCode(500, new { error = "Internal server error" });
+            }
         }
         
         private string LoadEmbeddedResource(string resourceName)
@@ -903,15 +1037,66 @@ namespace Shoko.AniSync.Controllers
         private string GetDashboardHtml(bool isAuthenticated, string username, string shokoUsername = "None")
         {
             var dashboard = LoadEmbeddedResource("dashboard.html");
+            
+            // Get actual statistics for the dashboard
+            string totalAnime = "0";
+            string syncedAnime = "0";
+            string lastSync = "Never";
+            string pending = "0";
+            
+            if (isAuthenticated && ShokoMalPlugin.SyncHistory != null)
+            {
+                try
+                {
+                    // Get sync history stats for this Shoko user
+                    var userHistory = ShokoMalPlugin.SyncHistory.GetUserStatsAsync(shokoUsername).Result;
+                    if (userHistory != null)
+                    {
+                        // Get unique anime count from history
+                        var uniqueAnimeIds = userHistory.History
+                            .Where(h => h.AnimeId.HasValue)
+                            .Select(h => h.AnimeId.Value)
+                            .Distinct()
+                            .Count();
+                        
+                        syncedAnime = uniqueAnimeIds.ToString();
+                        
+                        // Format last sync date
+                        if (userHistory.LastSync.HasValue)
+                        {
+                            var timeDiff = DateTime.Now - userHistory.LastSync.Value;
+                            if (timeDiff.TotalMinutes < 1)
+                                lastSync = "Just now";
+                            else if (timeDiff.TotalHours < 1)
+                                lastSync = $"{(int)timeDiff.TotalMinutes}m ago";
+                            else if (timeDiff.TotalDays < 1)
+                                lastSync = $"{(int)timeDiff.TotalHours}h ago";
+                            else if (timeDiff.TotalDays < 7)
+                                lastSync = $"{(int)timeDiff.TotalDays}d ago";
+                            else
+                                lastSync = userHistory.LastSync.Value.ToString("MMM dd, yyyy");
+                        }
+                    }
+                    
+                    // TODO: Get total anime count from Shoko API if available
+                    // For now, we'll show the synced count as total if we don't have the real total
+                    totalAnime = syncedAnime;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to get dashboard statistics");
+                }
+            }
+            
             var dashboardContent = isAuthenticated 
                 ? LoadEmbeddedResource("dashboard-auth.html")
                     .Replace("{USERNAME}", username)
                     .Replace("{SHOKO_USER}", shokoUsername)
                     .Replace("{SHOKO_USER_OPTIONS}", GetShokoUserOptions(shokoUsername))
-                    .Replace("{TOTAL_ANIME}", "0")
-                    .Replace("{SYNCED_ANIME}", "0")
-                    .Replace("{LAST_SYNC}", "Never")
-                    .Replace("{PENDING}", "0")
+                    .Replace("{TOTAL_ANIME}", totalAnime)
+                    .Replace("{SYNCED_ANIME}", syncedAnime)
+                    .Replace("{LAST_SYNC}", lastSync)
+                    .Replace("{PENDING}", pending)
                 : LoadEmbeddedResource("dashboard-unauth.html");
             
             var content = dashboard.Replace("{DASHBOARD_CONTENT}", dashboardContent);
