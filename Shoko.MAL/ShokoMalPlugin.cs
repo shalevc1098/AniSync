@@ -27,9 +27,9 @@ namespace Shoko.AniSync
         private readonly ILogger<ShokoMalPlugin> _logger;
         private readonly IUserDataService _userDataService;
         private readonly IApplicationPaths _applicationPaths;
-        public static SyncHistoryManager SyncHistory { get; private set; }
+        public static SyncHistoryManager SyncHistory { get; private set; } = null!;
 
-        internal IApiCallHelpers ApiCallHelpers;
+        internal IApiCallHelpers ApiCallHelpers = null!;
 
         // Shoko will inject the IMetadataService for you
         public ShokoMalPlugin(IApplicationPaths applicationPaths, IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory, IMemoryCache memoryCache, IMetadataService metadataService, IUserDataService userDataService)
@@ -54,21 +54,21 @@ namespace Shoko.AniSync
 
         private bool TitleCheck(Anime anime, IShokoEpisode episode)
         {
-            return episode.Series.Titles.Any(title =>
+            return episode.Series?.Titles?.Any(title =>
             {
-                bool titleMatch = CompareStrings(anime.Title, title.Title) ||
-                   (anime.AlternativeTitles.En != null && CompareStrings(anime.AlternativeTitles.En, title.Title)) ||
-                   (anime.AlternativeTitles.Ja != null && CompareStrings(anime.AlternativeTitles.Ja, title.Title)) ||
-                   (anime.AlternativeTitles.Synonyms != null && anime.AlternativeTitles.Synonyms.Any(synonym => CompareStrings(synonym, title.Title)));
+                bool titleMatch = CompareStrings(anime.Title ?? "", title.Title) ||
+                   (anime.AlternativeTitles?.En != null && CompareStrings(anime.AlternativeTitles.En, title.Title)) ||
+                   (anime.AlternativeTitles?.Ja != null && CompareStrings(anime.AlternativeTitles.Ja, title.Title)) ||
+                   (anime.AlternativeTitles?.Synonyms != null && anime.AlternativeTitles.Synonyms.Any(synonym => CompareStrings(synonym, title.Title)));
                 if (!titleMatch)
                 {
-                    titleMatch = ContainsExtended(anime.Title, title.Title) ||
-                   (anime.AlternativeTitles.En != null && ContainsExtended(anime.AlternativeTitles.En, title.Title)) ||
-                   (anime.AlternativeTitles.Ja != null && ContainsExtended(anime.AlternativeTitles.Ja, title.Title)) ||
-                   (anime.AlternativeTitles.Synonyms != null && anime.AlternativeTitles.Synonyms.Any(synonym => ContainsExtended(synonym, title.Title)));
+                    titleMatch = ContainsExtended(anime.Title ?? "", title.Title) ||
+                   (anime.AlternativeTitles?.En != null && ContainsExtended(anime.AlternativeTitles.En, title.Title)) ||
+                   (anime.AlternativeTitles?.Ja != null && ContainsExtended(anime.AlternativeTitles.Ja, title.Title)) ||
+                   (anime.AlternativeTitles?.Synonyms != null && anime.AlternativeTitles.Synonyms.Any(synonym => ContainsExtended(synonym, title.Title)));
                 }
                 return titleMatch;
-            });
+            }) ?? false;
         }
 
         private bool ContainsExtended(string first, string second)
@@ -76,9 +76,9 @@ namespace Shoko.AniSync
             return StringFormatter.RemoveSpecialCharacters(first).Contains(StringFormatter.RemoveSpecialCharacters(second), StringComparison.OrdinalIgnoreCase);
         }
 
-        private async Task<Anime> GetOva(int animeId, IReadOnlyList<AnimeTitle> episodeNames, string? alternativeId = null, string shokoUsername = null)
+        private async Task<Anime?> GetOva(int animeId, IReadOnlyList<AnimeTitle> episodeNames, string? alternativeId = null, string? shokoUsername = null)
         {
-            Anime anime = await ApiCallHelpers.GetAnime(animeId, getRelated: true, alternativeId: alternativeId, shokoUsername: shokoUsername);
+            Anime? anime = await ApiCallHelpers.GetAnime(animeId, getRelated: true, alternativeId: alternativeId, shokoUsername: shokoUsername);
             if (anime == null)
             {
                 _logger.LogError("Could not get anime for ID {AnimeId}", animeId);
@@ -87,10 +87,10 @@ namespace Shoko.AniSync
 
             if (anime != null)
             {
-                var listOfRelatedAnime = anime.RelatedAnime.Where(relation => relation.RelationType is AnimeRelationType.Side_Story or AnimeRelationType.Alternative_Version or AnimeRelationType.Alternative_Setting);
+                var listOfRelatedAnime = anime.RelatedAnime?.Where(relation => relation.RelationType is AnimeRelationType.Side_Story or AnimeRelationType.Alternative_Version or AnimeRelationType.Alternative_Setting) ?? new List<RelatedAnime>();
                 foreach (RelatedAnime relatedAnime in listOfRelatedAnime)
                 {
-                    var detailedRelatedAnime = await ApiCallHelpers.GetAnime(relatedAnime.Anime.Id, alternativeId: relatedAnime.Anime.AlternativeId, shokoUsername: shokoUsername);
+                    var detailedRelatedAnime = await ApiCallHelpers.GetAnime(relatedAnime.Anime?.Id ?? 0, alternativeId: relatedAnime.Anime?.AlternativeId, shokoUsername: shokoUsername);
                     if (detailedRelatedAnime is { Title: { }, AlternativeTitles: { En: { } } })
                     {
                         bool titleMatch = episodeNames.Any(episodeName =>
@@ -123,28 +123,28 @@ namespace Shoko.AniSync
             return null;
         }
 
-        private async Task<Anime?> FetchIdFromProvider(IShokoEpisode episode, string shokoUsername = null)
+        private async Task<Anime?> FetchIdFromProvider(IShokoEpisode episode, string? shokoUsername = null)
         {
             // Cache key for search results
-            var cacheKey = $"mal_search_{episode.Series.AnidbAnimeID}";
+            var cacheKey = $"mal_search_{episode.Series?.AnidbAnimeID ?? 0}";
             
             var uniqueAnimes = await _memoryCache.GetOrCreateAsync(cacheKey, async entry =>
             {
                 entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(15);
                 
-                var searchTasks = episode.Series.Titles.Select(t => ApiCallHelpers.SearchAnime(t.Title, shokoUsername)).ToArray();
+                var searchTasks = episode.Series?.Titles?.Select(t => ApiCallHelpers.SearchAnime(t.Title, shokoUsername)).ToArray() ?? new Task<List<Anime>?>[0];
                 var results = await Task.WhenAll(searchTasks);
-                var allAnimes = results.SelectMany(list => list);
+                var allAnimes = results.SelectMany(list => list ?? new List<Anime>());
                 return allAnimes.DistinctBy(a => a.Id).ToList();
             });
             
-            var candidates = uniqueAnimes
-                            .Where(a => TitleCheck(a, episode))
+            var candidates = (uniqueAnimes ?? new List<Anime>())
+                            .Where(a => a != null && TitleCheck(a, episode))
                             .Select(a => new {
                                 Anime = a,
-                                MalDate = ParseFullDate(a.StartDate),
-                                DiffDays = episode.Series.AirDate.HasValue && ParseFullDate(a.StartDate).HasValue
-                                    ? Math.Abs((ParseFullDate(a.StartDate).Value - episode.Series.AirDate.Value).TotalDays)
+                                MalDate = ParseFullDate(a.StartDate ?? ""),
+                                DiffDays = episode.Series?.AirDate.HasValue == true && ParseFullDate(a.StartDate ?? "").HasValue
+                                    ? Math.Abs((ParseFullDate(a.StartDate ?? "")!.Value - episode.Series.AirDate.Value).TotalDays)
                                     : double.MaxValue
                             })
                             .Where(x => x.DiffDays < 30)
@@ -154,13 +154,13 @@ namespace Shoko.AniSync
             if (candidates.Count > 1)
             {
                 _logger.LogDebug("Found {Count} candidates for {Title}, selected best match with {Days} days difference", 
-                    candidates.Count, episode.Series.Titles.First().Title, candidates.First().DiffDays.ToString("0"));
+                    candidates.Count, episode.Series?.Titles?.First()?.Title ?? "Unknown", candidates.First().DiffDays.ToString("0"));
             }
             
             Anime? anime = candidates.FirstOrDefault()?.Anime;
             if (anime == null)
             {
-                _logger.LogError("Could not find anime for {Title}", episode.Series.Titles.First().Title);
+                _logger.LogError("Could not find anime for {Title}", episode.Series?.Titles?.First()?.Title ?? "Unknown");
                 return null;
             }
             
@@ -223,12 +223,12 @@ namespace Shoko.AniSync
             }
         }
 
-        private async Task<Anime?> GetIdFromOfflineDb(IShokoEpisode episode, string shokoUsername = null)
+        private async Task<Anime?> GetIdFromOfflineDb(IShokoEpisode episode, string? shokoUsername = null)
         {
-            var offlineDbIds = await AnimeOfflineDatabaseHelpers.GetProviderIdsFromMetadataProvider(_httpClientFactory.CreateClient(), episode.Series.AnidbAnimeID, AnimeOfflineDatabaseHelpers.Source.Anidb);
+            var offlineDbIds = await AnimeOfflineDatabaseHelpers.GetProviderIdsFromMetadataProvider(_httpClientFactory.CreateClient(), episode.Series?.AnidbAnimeID ?? 0, AnimeOfflineDatabaseHelpers.Source.Anidb);
             if (offlineDbIds == null || offlineDbIds.Mal == null)
             {
-                _logger.LogWarning("Could not get offline database IDs for AniDB ID {AnidbId}, fetching from provider...", episode.Series.AnidbAnimeID);
+                _logger.LogWarning("Could not get offline database IDs for AniDB ID {AnidbId}, fetching from provider...", episode.Series?.AnidbAnimeID ?? 0);
                 return await FetchIdFromProvider(episode, shokoUsername);
             }
             var malId = offlineDbIds.Mal;
@@ -270,10 +270,10 @@ namespace Shoko.AniSync
                 }
 
                 // Get the correct MAL account for this user
-                UserApiAuth userAuth = null;
-                if (shokoUser != null && Plugin.Instance.Config != null)
+                UserApiAuth? userAuth = null;
+                if (shokoUser != null && Plugin.Instance?.Config != null)
                 {
-                    userAuth = Plugin.Instance.Config.GetAuthForShokoUser(shokoUser.Username);
+                    userAuth = Plugin.Instance.Config.GetAuthForShokoUser(shokoUser.Username!);
                     if (userAuth == null)
                     {
                         _logger.LogWarning("No MAL account configured for Shoko user {Username}, skipping sync", shokoUser.Username);
@@ -300,7 +300,7 @@ namespace Shoko.AniSync
                         break;
                 }
 
-                IShokoEpisode maxEpisode = null;
+                IShokoEpisode? maxEpisode = null;
                 foreach (var episode in e.Video.Episodes)
                 {
                     if (episode.Type is not EpisodeType.Episode and not EpisodeType.Special || episode.Series is not { } series) continue;
@@ -311,7 +311,7 @@ namespace Shoko.AniSync
                 }
                 if (maxEpisode == null)
                 {
-                    _logger.LogWarning("No episodes found for {Title}", e.Video.MediaInfo.Title);
+                    _logger.LogWarning("No episodes found for {Title}", e.Video?.MediaInfo?.Title ?? "Unknown");
                     return;
                 }
 
@@ -321,7 +321,7 @@ namespace Shoko.AniSync
                 int playbackCount = e.UserData.PlaybackCount;
                 
                 _logger.LogInformation("Episode {EpisodeNumber} event: Reason={Reason}, PlaybackCount={Count}, IsWatched={Watched} for {Title}", 
-                    shokoEpisodeNumber, e.Reason, playbackCount, isWatched, maxEpisode.Series.PreferredTitle);
+                    shokoEpisodeNumber, e.Reason, playbackCount, isWatched, maxEpisode.Series?.PreferredTitle ?? "Unknown");
 
                 var anime = await GetIdFromOfflineDb(maxEpisode, shokoUser?.Username);
                 if (anime != null)
@@ -428,10 +428,10 @@ namespace Shoko.AniSync
                         if (shouldUpdate)
                         {
                             _logger.LogInformation("Updating MAL status for {Title}: Episodes: {Episodes}, Status: {Status}, Rewatching: {Rewatching}",
-                                anime.Title, newEpisodeCount, newStatus?.ToString() ?? "unchanged", setRewatching?.ToString() ?? "unchanged");
+                                anime.Title ?? "Unknown", newEpisodeCount, newStatus?.ToString() ?? "unchanged", setRewatching?.ToString() ?? "unchanged");
                             
                             // Call UpdateAnime with the appropriate status
-                            UpdateAnimeStatusResponse updateResult = null;
+                            UpdateAnimeStatusResponse? updateResult = null;
                             
                             // Determine which status to use: new status if changed, otherwise keep current
                             var statusToUse = newStatus ?? currentStatus;
@@ -441,14 +441,16 @@ namespace Shoko.AniSync
                             DateTime? endDate = null;
                             
                             // Set start date based on user preference
-                            // If SyncStartDateOnlyFromEpisodeOne is true, only set start date when watching episode 1
-                            // If false (default), set start date when going from 0 to any episode count
-                            bool syncOnlyFromEpisodeOne = Plugin.Instance.Config.GetSyncStartDateOnlyFromEpisodeOne(shokoUser?.Username);
+                            // If SetStartDateFromAnyEpisode is true, set start date when watching any episode for the first time
+                            // If false (default), only set start date when watching episode 1
+                            bool setFromAnyEpisode = Plugin.Instance.Config.GetSetStartDateFromAnyEpisode(shokoUser?.Username);
                             
                             if (malEpisodeCount == 0 && newEpisodeCount > 0)
                             {
                                 // Check if we should set the start date based on the setting
-                                bool shouldSetStartDate = !syncOnlyFromEpisodeOne || newEpisodeCount == 1;
+                                // Default (false): only set from episode 1
+                                // When enabled (true): set from any episode
+                                bool shouldSetStartDate = setFromAnyEpisode || newEpisodeCount == 1;
                                 
                                 if (shouldSetStartDate)
                                 {
@@ -467,7 +469,7 @@ namespace Shoko.AniSync
                                 }
                                 else
                                 {
-                                    _logger.LogInformation("Not setting start date for {Title} - started watching from episode {Episode} (SyncStartDateOnlyFromEpisodeOne is enabled)", 
+                                    _logger.LogInformation("Not setting start date for {Title} - started watching from episode {Episode} (SetStartDateFromAnyEpisode is disabled)", 
                                         anime.Title, newEpisodeCount);
                                 }
                             }
@@ -529,7 +531,7 @@ namespace Shoko.AniSync
                                 
                                 // Log to sync history
                                 string action = "Updated";
-                                string details = null;
+                                string? details = null;
                                 
                                 if (newStatus == Status.Completed)
                                 {
@@ -560,15 +562,15 @@ namespace Shoko.AniSync
                                 }
                                 
                                 SyncHistory?.LogSync(
-                                    anime.Title,
+                                    anime.Title ?? "Unknown",
                                     newEpisodeCount,
                                     anime.NumEpisodes,
                                     action,
                                     true,
-                                    shokoUser?.Username,
-                                    userAuth?.Username,
+                                    shokoUser?.Username ?? "Unknown User",
+                                    userAuth?.Username ?? "Unknown MAL User",
                                     null,
-                                    details
+                                    details ?? ""
                                 );
                             }
                             else
@@ -577,13 +579,13 @@ namespace Shoko.AniSync
                                 
                                 // Log failure to sync history
                                 SyncHistory?.LogSync(
-                                    anime.Title,
+                                    anime.Title ?? "Unknown",
                                     newEpisodeCount,
                                     anime.NumEpisodes,
                                     isWatched ? "Watched" : "Unwatched",
                                     false,
-                                    shokoUser?.Username,
-                                    userAuth?.Username,
+                                    shokoUser?.Username ?? "Unknown User",
+                                    userAuth?.Username ?? "Unknown MAL User",
                                     "Failed to update MAL",
                                     null
                                 );
@@ -637,15 +639,15 @@ namespace Shoko.AniSync
                                     : "Added to watching list with start date";
                                 
                                 SyncHistory?.LogSync(
-                                    anime.Title,
+                                    anime.Title ?? "Unknown",
                                     shokoEpisodeNumber,
                                     anime.NumEpisodes,
                                     action,
                                     true,
-                                    shokoUser?.Username,
-                                    userAuth?.Username,
+                                    shokoUser?.Username ?? "Unknown User",
+                                    userAuth?.Username ?? "Unknown MAL User",
                                     null,
-                                    details
+                                    details ?? ""
                                 );
                             }
                             else
@@ -654,13 +656,13 @@ namespace Shoko.AniSync
                                 
                                 // Log failure to sync history
                                 SyncHistory?.LogSync(
-                                    anime.Title,
+                                    anime.Title ?? "Unknown",
                                     shokoEpisodeNumber,
                                     anime.NumEpisodes,
                                     "Add to list",
                                     false,
-                                    shokoUser?.Username,
-                                    userAuth?.Username,
+                                    shokoUser?.Username ?? "Unknown User",
+                                    userAuth?.Username ?? "Unknown MAL User",
                                     "Failed to add to MAL",
                                     null
                                 );
@@ -674,7 +676,7 @@ namespace Shoko.AniSync
                 }
                 else
                 {
-                    _logger.LogWarning("Could not find MAL anime for {Title}", maxEpisode.Series.PreferredTitle);
+                    _logger.LogWarning("Could not find MAL anime for {Title}", maxEpisode.Series?.PreferredTitle ?? "Unknown");
                 }
             }
             catch (Exception ex)
