@@ -23,26 +23,26 @@ using Xunit;
 
 namespace Shoko.Tests
 {
-    public class ShokoMalPluginIntegrationTests
+    public class ShokoAniSyncPluginIntegrationTests
     {
         private readonly Mock<ILoggerFactory> _loggerFactoryMock;
-        private readonly Mock<ILogger<ShokoMalPlugin>> _loggerMock;
+        private readonly Mock<ILogger<ShokoAniSyncPlugin>> _loggerMock;
         private readonly Mock<IApiCallHelpers> _apiCallHelpersMock;
         private readonly Mock<IApplicationPaths> _applicationPathsMock;
-        private readonly ShokoMalPlugin _plugin;
+        private readonly ShokoAniSyncPlugin _plugin;
         private readonly string _testPluginPath;
 
-        public ShokoMalPluginIntegrationTests()
+        public ShokoAniSyncPluginIntegrationTests()
         {
             _loggerFactoryMock = new Mock<ILoggerFactory>();
-            _loggerMock = new Mock<ILogger<ShokoMalPlugin>>();
+            _loggerMock = new Mock<ILogger<ShokoAniSyncPlugin>>();
             _apiCallHelpersMock = new Mock<IApiCallHelpers>();
             _applicationPathsMock = new Mock<IApplicationPaths>();
             
             _testPluginPath = Path.Combine(Path.GetTempPath(), "ShokoTestPlugin");
             _applicationPathsMock.Setup(x => x.PluginsPath).Returns(_testPluginPath);
             
-            _loggerFactoryMock.Setup(x => x.CreateLogger<ShokoMalPlugin>())
+            _loggerFactoryMock.Setup(x => x.CreateLogger<ShokoAniSyncPlugin>())
                 .Returns(_loggerMock.Object);
 
             // Initialize plugin with mocked dependencies
@@ -55,7 +55,7 @@ namespace Shoko.Tests
             var metadataService = new Mock<IMetadataService>();
             var userDataService = new Mock<IUserDataService>();
             
-            _plugin = new ShokoMalPlugin(
+            _plugin = new ShokoAniSyncPlugin(
                 _applicationPathsMock.Object,
                 httpClientFactory.Object,
                 _loggerFactoryMock.Object,
@@ -121,7 +121,7 @@ namespace Shoko.Tests
 
             // Act
             // Call the private method via reflection (or make it public for testing)
-            var method = typeof(ShokoMalPlugin).GetMethod("OnEpisodeWatchedAsync", 
+            var method = typeof(ShokoAniSyncPlugin).GetMethod("OnEpisodeWatchedAsync", 
                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
             await (Task)method.Invoke(_plugin, new object[] { null, eventArgs });
 
@@ -188,7 +188,7 @@ namespace Shoko.Tests
 
             // Act
             // Call the private method via reflection (or make it public for testing)
-            var method = typeof(ShokoMalPlugin).GetMethod("OnEpisodeWatchedAsync", 
+            var method = typeof(ShokoAniSyncPlugin).GetMethod("OnEpisodeWatchedAsync", 
                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
             await (Task)method.Invoke(_plugin, new object[] { null, eventArgs });
 
@@ -256,7 +256,7 @@ namespace Shoko.Tests
 
             // Act
             // Call the private method via reflection (or make it public for testing)
-            var method = typeof(ShokoMalPlugin).GetMethod("OnEpisodeWatchedAsync", 
+            var method = typeof(ShokoAniSyncPlugin).GetMethod("OnEpisodeWatchedAsync", 
                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
             await (Task)method.Invoke(_plugin, new object[] { null, eventArgs });
 
@@ -328,7 +328,7 @@ namespace Shoko.Tests
 
             // Act
             // Call the private method via reflection (or make it public for testing)
-            var method = typeof(ShokoMalPlugin).GetMethod("OnEpisodeWatchedAsync", 
+            var method = typeof(ShokoAniSyncPlugin).GetMethod("OnEpisodeWatchedAsync", 
                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
             await (Task)method.Invoke(_plugin, new object[] { null, eventArgs });
 
@@ -400,7 +400,7 @@ namespace Shoko.Tests
 
             // Act
             // Call the private method via reflection (or make it public for testing)
-            var method = typeof(ShokoMalPlugin).GetMethod("OnEpisodeWatchedAsync", 
+            var method = typeof(ShokoAniSyncPlugin).GetMethod("OnEpisodeWatchedAsync", 
                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
             await (Task)method.Invoke(_plugin, new object[] { null, eventArgs });
 

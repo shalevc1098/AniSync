@@ -189,7 +189,7 @@ public class SyncLogicTests
 }
 
 // Testable version of the plugin to expose protected methods
-public class TestablePlugin : ShokoMalPlugin
+public class TestablePlugin : ShokoAniSyncPlugin
 {
     private static IApplicationPaths CreateMockApplicationPaths()
     {
@@ -207,7 +207,7 @@ public class TestablePlugin : ShokoMalPlugin
     public bool TestDetermineWatchedState(VideoUserDataSavedEventArgs e)
     {
         // Use reflection to call private method
-        var method = typeof(ShokoMalPlugin).GetMethod("DetermineWatchedState", 
+        var method = typeof(ShokoAniSyncPlugin).GetMethod("DetermineWatchedState", 
             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
         return (bool)method!.Invoke(this, new object[] { e })!;
     }

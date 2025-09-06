@@ -21,7 +21,7 @@ namespace Shoko.Tests
 {
     public class SetStartDateFromAnyEpisodeTests
     {
-        private readonly Mock<ILogger<ShokoMalPlugin>> _loggerMock;
+        private readonly Mock<ILogger<ShokoAniSyncPlugin>> _loggerMock;
         private readonly Mock<IApiCallHelpers> _apiCallHelpersMock;
         private readonly Mock<Shoko.Plugin.Abstractions.Services.IUserDataService> _userDataServiceMock;
         private readonly Config _config;
@@ -29,7 +29,7 @@ namespace Shoko.Tests
 
         public SetStartDateFromAnyEpisodeTests()
         {
-            _loggerMock = new Mock<ILogger<ShokoMalPlugin>>();
+            _loggerMock = new Mock<ILogger<ShokoAniSyncPlugin>>();
             _apiCallHelpersMock = new Mock<IApiCallHelpers>();
             _userDataServiceMock = new Mock<Shoko.Plugin.Abstractions.Services.IUserDataService>();
             _testConfigPath = Path.Combine(Path.GetTempPath(), $"test-config-{Guid.NewGuid()}.json");

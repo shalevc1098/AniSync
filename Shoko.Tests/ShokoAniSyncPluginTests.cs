@@ -20,7 +20,7 @@ using Xunit;
 
 namespace Shoko.Tests;
 
-public class ShokoMalPluginTests
+public class ShokoAniSyncPluginTests
 {
     [Fact]
     public async Task StartAsync_Should_Subscribe_To_VideoUserDataSaved_Event()
@@ -115,12 +115,12 @@ public class ShokoMalPluginTests
         result.Should().BeNull();
     }
 
-    private ShokoMalPlugin CreatePlugin(
+    private ShokoAniSyncPlugin CreatePlugin(
         Mock<IUserDataService>? userDataServiceMock = null)
     {
         var httpClientFactoryMock = new Mock<IHttpClientFactory>();
         var loggerFactoryMock = new Mock<ILoggerFactory>();
-        var loggerMock = new Mock<ILogger<ShokoMalPlugin>>();
+        var loggerMock = new Mock<ILogger<ShokoAniSyncPlugin>>();
         var memoryCache = new MemoryCache(new MemoryCacheOptions());
         var metadataServiceMock = new Mock<IMetadataService>();
         var applicationPathsMock = new Mock<IApplicationPaths>();
@@ -130,7 +130,7 @@ public class ShokoMalPluginTests
         loggerFactoryMock.Setup(x => x.CreateLogger(It.IsAny<string>()))
             .Returns(loggerMock.Object);
         
-        return new ShokoMalPlugin(
+        return new ShokoAniSyncPlugin(
             applicationPathsMock.Object,
             httpClientFactoryMock.Object,
             loggerFactoryMock.Object,
