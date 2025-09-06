@@ -12,7 +12,7 @@ namespace Shoko.AniSync
         public string Name => "AniSync";
         public static Plugin? Instance { get; private set; }
 
-        public Config Config { get; private set; }
+        public Config Config { get; private set; } = null!;
 
         public Plugin() {}
 
