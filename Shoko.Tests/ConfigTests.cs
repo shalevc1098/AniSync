@@ -34,8 +34,7 @@ public class ConfigTests : IDisposable
 
         // Assert
         _config.Should().NotBeNull();
-        _config.Auths.Should().NotBeNull();
-        _config.Auths.Should().BeEmpty();
+        _config.Should().BeEmpty();
         File.Exists(_testConfigPath).Should().BeTrue();
     }
 
@@ -54,10 +53,10 @@ public class ConfigTests : IDisposable
         _config.SetAuthForShokoUser("shalev", ApiName.Mal, auth);
 
         // Assert
-        _config.Auths.Should().ContainKey("shalev");
-        _config.Auths["shalev"].Should().ContainKey(ApiName.Mal);
-        _config.Auths["shalev"][ApiName.Mal].Username.Should().Be("mal_user1");
-        _config.Auths["shalev"][ApiName.Mal].AccessToken.Should().Be("token123");
+        _config.Should().ContainKey("shalev");
+        _config["shalev"].Providers.Should().ContainKey("Mal");
+        _config["shalev"].Providers["Mal"].Username.Should().Be("mal_user1");
+        _config["shalev"].Providers["Mal"].AccessToken.Should().Be("token123");
     }
 
     [Fact]
@@ -82,8 +81,8 @@ public class ConfigTests : IDisposable
         _config.SetAuthForShokoUser("shalev", ApiName.Mal, auth2);
 
         // Assert
-        _config.Auths["shalev"][ApiName.Mal].Username.Should().Be("mal_user2");
-        _config.Auths["shalev"][ApiName.Mal].AccessToken.Should().Be("token456");
+        _config["shalev"].Providers["Mal"].Username.Should().Be("mal_user2");
+        _config["shalev"].Providers["Mal"].AccessToken.Should().Be("token456");
     }
 
     [Fact]
@@ -108,9 +107,9 @@ public class ConfigTests : IDisposable
         _config.SetAuthForShokoUser("shalev", ApiName.AniList, anilistAuth);
 
         // Assert
-        _config.Auths["shalev"].Should().HaveCount(2);
-        _config.Auths["shalev"][ApiName.Mal].Username.Should().Be("mal_user");
-        _config.Auths["shalev"][ApiName.AniList].Username.Should().Be("anilist_user");
+        _config["shalev"].Providers.Should().HaveCount(2);
+        _config["shalev"].Providers["Mal"].Username.Should().Be("mal_user");
+        _config["shalev"].Providers["AniList"].Username.Should().Be("anilist_user");
     }
 
     [Fact]
@@ -205,18 +204,18 @@ public class ConfigTests : IDisposable
 
         _config.SetAuthForShokoUser("shalev", ApiName.Mal, auth1);
         _config.SetAuthForShokoUser("shalev", ApiName.AniList, auth2);
-        _config.UpdateNsfw = true;
+        _config.SetUserSettings("shalev", new UserSettings { UpdateNsfw = true });
 
         // Act
         _config.Save();
         var loadedConfig = new Config(_testConfigPath);
 
         // Assert
-        loadedConfig.Auths.Should().HaveCount(1);
-        loadedConfig.Auths["shalev"].Should().HaveCount(2);
-        loadedConfig.Auths["shalev"][ApiName.Mal].Username.Should().Be("mal_user");
-        loadedConfig.Auths["shalev"][ApiName.AniList].Username.Should().Be("anilist_user");
-        loadedConfig.UpdateNsfw.Should().BeTrue();
+        loadedConfig.Should().HaveCount(1);
+        loadedConfig["shalev"].Providers.Should().HaveCount(2);
+        loadedConfig["shalev"].Providers["Mal"].Username.Should().Be("mal_user");
+        loadedConfig["shalev"].Providers["AniList"].Username.Should().Be("anilist_user");
+        loadedConfig.GetUpdateNsfw("shalev").Should().BeTrue();
     }
 
     [Fact]
@@ -237,10 +236,46 @@ public class ConfigTests : IDisposable
         dynamic jsonObj = JsonConvert.DeserializeObject(json);
 
         // Assert
-        ((string)jsonObj.auths.shalev.Mal.username).Should().Be("mal_user");
-        ((string)jsonObj.auths.shalev.Mal.access_token).Should().Be("token123");
-        ((string)jsonObj.auths.shalev.Mal.refresh_token).Should().Be("refresh123");
-        // ShokoUsername should NOT be in the JSON
-        ((object)jsonObj.auths.shalev.Mal.shoko_username).Should().BeNull();
+        ((string)jsonObj.shalev.providers.Mal.username).Should().Be("mal_user");
+        ((string)jsonObj.shalev.providers.Mal.access_token).Should().Be("token123");
+        ((string)jsonObj.shalev.providers.Mal.refresh_token).Should().Be("refresh123");
+    }
+
+    [Fact]
+    public void GetSyncStartDateOnlyFromEpisodeOne_Should_Return_Default_False_When_Not_Set()
+    {
+        // Act
+        var result = _config.GetSyncStartDateOnlyFromEpisodeOne("shalev");
+
+        // Assert
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public void GetSyncStartDateOnlyFromEpisodeOne_Should_Return_UserSetting_When_Set()
+    {
+        // Arrange
+        _config.SetUserSettings("shalev", new UserSettings { SyncStartDateOnlyFromEpisodeOne = true });
+
+        // Act
+        var result = _config.GetSyncStartDateOnlyFromEpisodeOne("shalev");
+
+        // Assert
+        result.Should().BeTrue();
+    }
+
+    [Fact]
+    public void GetSyncStartDateOnlyFromEpisodeOne_Should_Preserve_Value_After_Save_And_Load()
+    {
+        // Arrange
+        _config.SetUserSettings("shalev", new UserSettings { SyncStartDateOnlyFromEpisodeOne = true });
+        _config.Save();
+        
+        // Act
+        var loadedConfig = new Config(_testConfigPath);
+        var result = loadedConfig.GetSyncStartDateOnlyFromEpisodeOne("shalev");
+
+        // Assert
+        result.Should().BeTrue();
     }
 }
