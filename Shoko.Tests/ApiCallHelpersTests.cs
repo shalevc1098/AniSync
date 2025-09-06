@@ -26,7 +26,9 @@ public class ApiCallHelpersTests
         {
             var plugin = new AniSync.Plugin();
             typeof(AniSync.Plugin).GetProperty("Instance")?.SetValue(null, plugin);
-            plugin.GetType().GetProperty("Config")?.SetValue(plugin, new Config("test-config.json") { UpdateNsfw = true });
+            var config = new Config("test-config.json");
+            // No need to set UpdateNsfw globally anymore - it's per-user
+            plugin.GetType().GetProperty("Config")?.SetValue(plugin, config);
 
             var apiCallHelpers = new ApiCallHelpers();
             

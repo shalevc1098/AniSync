@@ -125,6 +125,8 @@ public class ShokoMalPluginTests
         var metadataServiceMock = new Mock<IMetadataService>();
         var applicationPathsMock = new Mock<IApplicationPaths>();
         
+        applicationPathsMock.Setup(x => x.PluginsPath).Returns(System.IO.Path.GetTempPath());
+        
         loggerFactoryMock.Setup(x => x.CreateLogger(It.IsAny<string>()))
             .Returns(loggerMock.Object);
         

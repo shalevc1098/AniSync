@@ -36,10 +36,13 @@ namespace Shoko.Tests
             _config.SetAuthForShokoUser(shokoUsername, ApiName.Mal, auth);
 
             // Assert
-            _config.Auths.Should().ContainKey(shokoUsername);
-            _config.Auths[shokoUsername].Should().ContainKey(ApiName.Mal);
-            _config.Auths[shokoUsername][ApiName.Mal].Should().Be(auth);
-            _config.Auths[shokoUsername][ApiName.Mal].ShokoUsername.Should().Be(shokoUsername);
+            _config.Should().ContainKey(shokoUsername);
+            _config[shokoUsername].Providers.Should().ContainKey("Mal");
+            var savedAuth = _config.GetAuthForShokoUser(shokoUsername, ApiName.Mal);
+            savedAuth.Should().NotBeNull();
+            savedAuth.Username.Should().Be(auth.Username);
+            savedAuth.AccessToken.Should().Be(auth.AccessToken);
+            savedAuth.ShokoUsername.Should().Be(shokoUsername);
         }
 
         [Fact]
@@ -90,9 +93,9 @@ namespace Shoko.Tests
             _config.SetAuthForShokoUser(user2, ApiName.Mal, malAuth2);
 
             // Assert
-            _config.Auths.Should().HaveCount(2);
-            _config.Auths[user1].Should().HaveCount(2);
-            _config.Auths[user2].Should().HaveCount(1);
+            _config.Should().HaveCount(2);
+            _config[user1].Providers.Should().HaveCount(2);
+            _config[user2].Providers.Should().HaveCount(1);
             
             _config.GetAuthForShokoUser(user1, ApiName.Mal).Username.Should().Be("shalev_mal");
             _config.GetAuthForShokoUser(user1, ApiName.AniList).Username.Should().Be("shalev_anilist");
@@ -166,7 +169,7 @@ namespace Shoko.Tests
             var loadedConfig = new Config(_testConfigPath);
 
             // Assert
-            loadedConfig.Auths.Should().HaveCount(2);
+            loadedConfig.Should().HaveCount(2);
             loadedConfig.GetAuthForShokoUser("user1", ApiName.Mal).Username.Should().Be("mal_user1");
             loadedConfig.GetAuthForShokoUser("user2", ApiName.Mal).Username.Should().Be("mal_user2");
         }

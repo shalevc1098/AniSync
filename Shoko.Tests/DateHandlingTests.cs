@@ -30,8 +30,8 @@ namespace Shoko.Tests
             _memoryCacheMock = new Mock<IMemoryCache>();
             _delayerMock = new Mock<IAsyncDelayer>();
 
-            _loggerFactoryMock.Setup(x => x.CreateLogger<MalApiCalls>())
-                .Returns(_loggerMock.Object);
+            _loggerFactoryMock.Setup(x => x.CreateLogger(It.IsAny<string>()))
+                .Returns((string categoryName) => _loggerMock.Object);
 
             _malApiCalls = new MalApiCalls(
                 _httpClientFactoryMock.Object,

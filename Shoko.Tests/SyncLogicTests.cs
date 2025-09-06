@@ -191,9 +191,16 @@ public class SyncLogicTests
 // Testable version of the plugin to expose protected methods
 public class TestablePlugin : ShokoMalPlugin
 {
+    private static IApplicationPaths CreateMockApplicationPaths()
+    {
+        var mock = new Mock<IApplicationPaths>();
+        mock.Setup(x => x.PluginsPath).Returns(System.IO.Path.GetTempPath());
+        return mock.Object;
+    }
+
     public TestablePlugin(IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory,
         IMemoryCache memoryCache, IMetadataService metadataService, IUserDataService userDataService)
-        : base(Mock.Of<IApplicationPaths>(), httpClientFactory, loggerFactory, memoryCache, metadataService, userDataService)
+        : base(CreateMockApplicationPaths(), httpClientFactory, loggerFactory, memoryCache, metadataService, userDataService)
     {
     }
     
