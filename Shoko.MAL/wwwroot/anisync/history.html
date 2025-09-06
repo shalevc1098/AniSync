@@ -1,34 +1,51 @@
 <div class='card'>
     <h1 class='card-title'><i class="fas fa-history" style="margin-right: 8px;"></i>Sync History</h1>
     
-    <div class='history-stats'>
-        <div class='stat-item'>
-            <span class='stat-value'>{TOTAL_SYNCS}</span>
-            <span class='stat-label'>Total Syncs</span>
-        </div>
-        <div class='stat-item'>
-            <span class='stat-value'>{FAILED_SYNCS}</span>
-            <span class='stat-label'>Failed</span>
-        </div>
-        <div class='stat-item'>
-            <span class='stat-value'>{SUCCESS_RATE}%</span>
-            <span class='stat-label'>Success Rate</span>
-        </div>
-        <div class='stat-item'>
-            <span class='stat-value'>{LAST_SYNC}</span>
-            <span class='stat-label'>Last Sync</span>
-        </div>
+    <div id='loading-message' style='text-align: center; padding: 20px; color: #9ca9b3;'>
+        <i class="fas fa-spinner fa-spin" style="margin-right: 8px;"></i>Loading history...
     </div>
     
-    <div class='history-filters'>
-        <button class='filter-btn active' onclick='filterHistory("all")'>All</button>
-        <button class='filter-btn' onclick='filterHistory("success")'>Success</button>
-        <button class='filter-btn' onclick='filterHistory("failed")'>Failed</button>
-        <button class='filter-btn' onclick='filterHistory("today")'>Today</button>
+    <div id='error-message' style='display: none; text-align: center; padding: 20px; color: #ef4444;'>
+        <i class="fas fa-exclamation-triangle" style="margin-right: 8px;"></i>
+        <span id='error-text'>Failed to load history</span>
     </div>
     
-    <div class='history-list'>
-        {HISTORY_ENTRIES}
+    <div id='history-content' style='display: none;'>
+        <div class='history-stats'>
+            <div class='stat-item'>
+                <span class='stat-value' id='total-syncs'>0</span>
+                <span class='stat-label'>Total Syncs</span>
+            </div>
+            <div class='stat-item'>
+                <span class='stat-value' id='failed-syncs'>0</span>
+                <span class='stat-label'>Failed</span>
+            </div>
+            <div class='stat-item'>
+                <span class='stat-value' id='success-rate'>0%</span>
+                <span class='stat-label'>Success Rate</span>
+            </div>
+            <div class='stat-item'>
+                <span class='stat-value' id='last-sync'>Never</span>
+                <span class='stat-label'>Last Sync</span>
+            </div>
+        </div>
+        
+        <div class='history-filters'>
+            <button class='filter-btn active' onclick='filterHistory("all")'>All</button>
+            <button class='filter-btn' onclick='filterHistory("success")'>Success</button>
+            <button class='filter-btn' onclick='filterHistory("failed")'>Failed</button>
+            <button class='filter-btn' onclick='filterHistory("today")'>Today</button>
+        </div>
+        
+        <div class='history-list' id='history-list'>
+            <!-- History entries will be populated here -->
+        </div>
+        
+        <div id='no-history' style='display: none; text-align: center; padding: 40px; color: #888;'>
+            <i class="fas fa-history" style="font-size: 3rem; margin-bottom: 20px; opacity: 0.3;"></i>
+            <p>No sync history available yet.</p>
+            <p style='font-size: 0.9rem; margin-top: 10px;'>History will appear here after your first anime sync.</p>
+        </div>
     </div>
 </div>
 
@@ -47,6 +64,10 @@
     text-align: center;
     border: 1px solid #2b3556;
     transition: transform 0.3s, border-color 0.3s;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
 }
 
 .stat-item:hover {
@@ -60,6 +81,10 @@
     font-weight: 700;
     color: #46bcf2;
     margin-bottom: 8px;
+}
+
+#last-sync {
+    font-size: 1.5rem;
 }
 
 .stat-label {
@@ -114,6 +139,8 @@
     transition: all 0.3s ease;
     position: relative;
     overflow: hidden;
+    display: flex;
+    gap: 15px;
 }
 
 .history-entry:hover {
@@ -127,6 +154,26 @@
 
 .history-entry.failed {
     border-left: 3px solid #ef4444;
+}
+
+.entry-thumbnail {
+    flex-shrink: 0;
+    width: 60px;
+    height: 85px;
+    border-radius: 4px;
+    overflow: hidden;
+    background: #1c2137;
+}
+
+.entry-thumbnail img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.entry-content {
+    flex-grow: 1;
+    min-width: 0;
 }
 
 .entry-header {
@@ -208,6 +255,218 @@
 </style>
 
 <script>
+let historyData = null;
+
+// Load history data when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    loadHistoryData();
+});
+
+async function loadHistoryData() {
+    try {
+        const response = await fetch('/anisync/api/history', {
+            headers: {
+                'apikey': window.shokoApiKey || ''
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        historyData = await response.json();
+        
+        if (historyData.error) {
+            showError(historyData.error);
+            return;
+        }
+        
+        displayHistoryData(historyData);
+        
+    } catch (error) {
+        console.error('Failed to load history:', error);
+        showError('Failed to connect to server. Please try again later.');
+    }
+}
+
+function showError(message) {
+    document.getElementById('loading-message').style.display = 'none';
+    document.getElementById('error-text').textContent = message;
+    document.getElementById('error-message').style.display = 'block';
+}
+
+function displayHistoryData(data) {
+    document.getElementById('loading-message').style.display = 'none';
+    
+    // Check if we have any history
+    if (!data.history || data.history.length === 0) {
+        document.getElementById('no-history').style.display = 'block';
+        return;
+    }
+    
+    // Update statistics
+    const totalSyncs = data.total_syncs || 0;
+    const failedSyncs = data.failed_syncs || 0;
+    const successRate = totalSyncs > 0 ? Math.round(((totalSyncs - failedSyncs) / totalSyncs) * 100) : 0;
+    
+    document.getElementById('total-syncs').textContent = totalSyncs;
+    document.getElementById('failed-syncs').textContent = failedSyncs;
+    document.getElementById('success-rate').textContent = successRate + '%';
+    
+    // Format last sync date
+    const lastSyncDate = data.last_sync ? formatDateTime(data.last_sync) : 'Never';
+    document.getElementById('last-sync').textContent = lastSyncDate;
+    
+    // Display history entries
+    displayHistoryEntries(data.history);
+    
+    document.getElementById('history-content').style.display = 'block';
+}
+
+function displayHistoryEntries(entries) {
+    const historyList = document.getElementById('history-list');
+    historyList.innerHTML = '';
+    
+    entries.forEach(entry => {
+        const entryElement = createHistoryEntry(entry);
+        historyList.appendChild(entryElement);
+    });
+}
+
+function createHistoryEntry(entry) {
+    const div = document.createElement('div');
+    div.className = `history-entry ${entry.success ? 'success' : 'failed'}`;
+    div.dataset.timestamp = entry.timestamp;
+    
+    // Format the timestamp
+    const timeFormatted = formatDateTime(entry.timestamp);
+    const timeRelative = getRelativeTime(entry.timestamp);
+    
+    // Create status badge
+    const statusClass = entry.success ? 'status-success' : 'status-failed';
+    const statusText = entry.success ? 'Success' : 'Failed';
+    
+    // Create action icon based on action type
+    let actionIcon = 'fa-play';
+    if (entry.action === 'completed') actionIcon = 'fa-check-circle';
+    else if (entry.action === 'plan_to_watch') actionIcon = 'fa-bookmark';
+    else if (entry.action === 'dropped') actionIcon = 'fa-times-circle';
+    
+    // Convert webp to jpg in the image URL
+    let imageUrl = entry.anime_image;
+    if (imageUrl && imageUrl.endsWith('.webp')) {
+        imageUrl = imageUrl.replace('.webp', '.jpg');
+    }
+    
+    div.innerHTML = `
+        ${imageUrl ? `
+        <div class='entry-thumbnail'>
+            <img src='${imageUrl}' alt='${escapeHtml(entry.anime_title || 'Anime thumbnail')}' 
+                 onerror="this.style.display='none'; this.parentElement.style.display='none';">
+        </div>
+        ` : ''}
+        <div class='entry-content'>
+            <div class='entry-header'>
+                <div class='entry-title'>${escapeHtml(entry.anime_title || 'Unknown Anime')}</div>
+                <div class='entry-time' title='${timeFormatted}'>${timeRelative}</div>
+            </div>
+            <div class='entry-details'>
+            <div class='entry-detail'>
+                <i class='fas ${actionIcon}'></i>
+                <span>${capitalizeFirst(entry.action || 'unknown')}</span>
+            </div>
+            ${entry.episodes_synced ? `
+            <div class='entry-detail'>
+                <i class='fas fa-tv'></i>
+                <span>Episode ${entry.episodes_synced}</span>
+            </div>
+            ` : ''}
+            ${entry.status ? `
+            <div class='entry-detail'>
+                <i class='fas fa-list'></i>
+                <span>${formatStatus(entry.status)}</span>
+            </div>
+            ` : ''}
+            <div class='entry-status ${statusClass}'>${statusText}</div>
+            </div>
+            ${entry.message ? `<div class='entry-message'>${escapeHtml(entry.message)}</div>` : ''}
+            ${entry.details ? `<div class='entry-message'>${escapeHtml(entry.details)}</div>` : ''}
+        </div>
+    `;
+    
+    return div;
+}
+
+function formatDateTime(dateString) {
+    if (!dateString) return 'Unknown';
+    
+    try {
+        const date = new Date(dateString);
+        // Use browser's locale for date formatting
+        const dateOptions = { 
+            year: 'numeric', 
+            month: '2-digit', 
+            day: '2-digit' 
+        };
+        const timeOptions = { 
+            hour: '2-digit', 
+            minute: '2-digit',
+            hour12: false 
+        };
+        
+        const formattedDate = date.toLocaleDateString(undefined, dateOptions);
+        const formattedTime = date.toLocaleTimeString(undefined, timeOptions);
+        
+        return `${formattedDate} ${formattedTime}`;
+    } catch (e) {
+        return 'Invalid Date';
+    }
+}
+
+function getRelativeTime(dateString) {
+    if (!dateString) return 'Unknown';
+    
+    try {
+        const date = new Date(dateString);
+        const now = new Date();
+        const diffMs = now - date;
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMins / 60);
+        const diffDays = Math.floor(diffHours / 24);
+        
+        if (diffMins < 1) return 'Just now';
+        if (diffMins < 60) return `${diffMins}m ago`;
+        if (diffHours < 24) return `${diffHours}h ago`;
+        if (diffDays === 1) return 'Yesterday';
+        if (diffDays < 7) return `${diffDays}d ago`;
+        
+        return formatDateTime(dateString);
+    } catch (e) {
+        return 'Unknown';
+    }
+}
+
+function formatStatus(status) {
+    const statusMap = {
+        'watching': 'Watching',
+        'completed': 'Completed', 
+        'on_hold': 'On Hold',
+        'dropped': 'Dropped',
+        'plan_to_watch': 'Plan to Watch'
+    };
+    return statusMap[status] || capitalizeFirst(status);
+}
+
+function capitalizeFirst(str) {
+    return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
 function filterHistory(filter) {
     // Update active button
     document.querySelectorAll('.filter-btn').forEach(btn => {
@@ -217,24 +476,31 @@ function filterHistory(filter) {
     
     // Filter history entries
     const entries = document.querySelectorAll('.history-entry');
+    const today = new Date().toDateString();
+    
     entries.forEach(entry => {
+        let shouldShow = false;
+        
         if (filter === 'all') {
-            entry.style.display = 'block';
+            shouldShow = true;
         } else if (filter === 'success' && entry.classList.contains('success')) {
-            entry.style.display = 'block';
+            shouldShow = true;
         } else if (filter === 'failed' && entry.classList.contains('failed')) {
-            entry.style.display = 'block';
+            shouldShow = true;
         } else if (filter === 'today') {
             // Check if entry is from today
-            const timeElement = entry.querySelector('.entry-time');
-            if (timeElement && timeElement.textContent.includes('Today')) {
-                entry.style.display = 'block';
-            } else {
-                entry.style.display = 'none';
+            const timestamp = entry.dataset.timestamp;
+            if (timestamp) {
+                try {
+                    const entryDate = new Date(timestamp);
+                    shouldShow = entryDate.toDateString() === today;
+                } catch (e) {
+                    shouldShow = false;
+                }
             }
-        } else {
-            entry.style.display = 'none';
         }
+        
+        entry.style.display = shouldShow ? 'block' : 'none';
     });
 }
 </script>
