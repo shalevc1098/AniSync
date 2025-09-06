@@ -38,7 +38,7 @@ namespace Shoko.AniSync.Helpers
         {
             bool updateNsfw = shokoUsername != null 
                 ? Plugin.Instance!.Config.GetUpdateNsfw(shokoUsername) 
-                : Plugin.Instance!.Config.UpdateNsfw;
+                : false; // Default value when no user context
             if (_malApiCalls != null)
             {
                 // TODO: if not using "status" and "num_episodes", remove
