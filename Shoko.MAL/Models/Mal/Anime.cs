@@ -9,21 +9,21 @@ namespace Shoko.AniSync.Models.Mal
 {
     public class MainPicture
     {
-        [JsonPropertyName("medium")] public string Medium { get; set; }
-        [JsonPropertyName("large")] public string Large { get; set; }
+        [JsonPropertyName("medium")] public string Medium { get; set; } = string.Empty;
+        [JsonPropertyName("large")] public string Large { get; set; } = string.Empty;
     }
 
     public class AlternativeTitles
     {
-        [JsonPropertyName("synonyms")] public List<string> Synonyms { get; set; }
-        [JsonPropertyName("en")] public string En { get; set; }
-        [JsonPropertyName("ja")] public string Ja { get; set; }
+        [JsonPropertyName("synonyms")] public List<string> Synonyms { get; set; } = new List<string>();
+        [JsonPropertyName("en")] public string En { get; set; } = string.Empty;
+        [JsonPropertyName("ja")] public string Ja { get; set; } = string.Empty;
     }
 
     public class Genre
     {
         [JsonPropertyName("id")] public int Id { get; set; }
-        [JsonPropertyName("name")] public string Name { get; set; }
+        [JsonPropertyName("name")] public string Name { get; set; } = string.Empty;
     }
 
     public class MyListStatus
@@ -36,39 +36,39 @@ namespace Shoko.AniSync.Models.Mal
 
         [JsonPropertyName("is_rewatching")] public bool IsRewatching { get; set; }
         [JsonPropertyName("updated_at")] public DateTime UpdatedAt { get; set; }
-        [JsonPropertyName("start_date")] public string StartDate { get; set; }
-        [JsonPropertyName("finish_date")] public string FinishDate { get; set; }
+        [JsonPropertyName("start_date")] public string? StartDate { get; set; }
+        [JsonPropertyName("finish_date")] public string? FinishDate { get; set; }
         public int? RewatchCount { get; set; }
     }
 
     public class StartSeason
     {
         [JsonPropertyName("year")] public int Year { get; set; }
-        [JsonPropertyName("season")] public string Season { get; set; }
+        [JsonPropertyName("season")] public string Season { get; set; } = string.Empty;
     }
 
     public class Broadcast
     {
-        [JsonPropertyName("day_of_the_week")] public string DayOfTheWeek { get; set; }
-        [JsonPropertyName("start_time")] public string StartTime { get; set; }
+        [JsonPropertyName("day_of_the_week")] public string DayOfTheWeek { get; set; } = string.Empty;
+        [JsonPropertyName("start_time")] public string StartTime { get; set; } = string.Empty;
     }
 
     public class Studio
     {
         [JsonPropertyName("id")] public int Id { get; set; }
-        [JsonPropertyName("name")] public string Name { get; set; }
+        [JsonPropertyName("name")] public string Name { get; set; } = string.Empty;
     }
 
     public class RelatedAnime
     {
-        [JsonPropertyName("node")] public Anime Anime { get; set; }
+        [JsonPropertyName("node")] public Anime? Anime { get; set; }
 
         [JsonConverter(typeof(JsonStringEnumConverter))]
         [JsonPropertyName("relation_type")]
         public AnimeRelationType RelationType { get; set; }
 
         [JsonPropertyName("relation_type_formatted")]
-        public string RelationTypeFormatted { get; set; }
+        public string RelationTypeFormatted { get; set; } = string.Empty;
     }
 
     public enum AnimeRelationType
@@ -88,13 +88,13 @@ namespace Shoko.AniSync.Models.Mal
 
     public class Picture
     {
-        [JsonPropertyName("medium")] public string Medium { get; set; }
-        [JsonPropertyName("large")] public string Large { get; set; }
+        [JsonPropertyName("medium")] public string Medium { get; set; } = string.Empty;
+        [JsonPropertyName("large")] public string Large { get; set; } = string.Empty;
     }
 
     public class Recommendation
     {
-        [JsonPropertyName("node")] public Anime Anime { get; set; }
+        [JsonPropertyName("node")] public Anime? Anime { get; set; }
 
         [JsonPropertyName("num_recommendations")]
         public int NumRecommendations { get; set; }
@@ -103,16 +103,16 @@ namespace Shoko.AniSync.Models.Mal
     public class Anime
     {
         [JsonPropertyName("id")] public int Id { get; set; }
-        public string AlternativeId { get; set; }
-        [JsonPropertyName("title")] public string Title { get; set; }
-        [JsonPropertyName("main_picture")] public MainPicture MainPicture { get; set; }
+        public string? AlternativeId { get; set; }
+        [JsonPropertyName("title")] public string? Title { get; set; }
+        [JsonPropertyName("main_picture")] public MainPicture? MainPicture { get; set; }
 
         [JsonPropertyName("alternative_titles")]
-        public AlternativeTitles AlternativeTitles { get; set; }
+        public AlternativeTitles? AlternativeTitles { get; set; }
 
-        [JsonPropertyName("start_date")] public string StartDate { get; set; }
-        [JsonPropertyName("end_date")] public string EndDate { get; set; }
-        [JsonPropertyName("synopsis")] public string Synopsis { get; set; }
+        [JsonPropertyName("start_date")] public string? StartDate { get; set; }
+        [JsonPropertyName("end_date")] public string? EndDate { get; set; }
+        [JsonPropertyName("synopsis")] public string? Synopsis { get; set; }
         [JsonPropertyName("mean")] public double Mean { get; set; }
         [JsonPropertyName("rank")] public int Rank { get; set; }
         [JsonPropertyName("popularity")] public int Popularity { get; set; }
@@ -121,42 +121,42 @@ namespace Shoko.AniSync.Models.Mal
         [JsonPropertyName("num_scoring_users")]
         public int NumScoringUsers { get; set; }
 
-        [JsonPropertyName("nsfw")] public string Nsfw { get; set; }
+        [JsonPropertyName("nsfw")] public string? Nsfw { get; set; }
         [JsonPropertyName("created_at")] public DateTime CreatedAt { get; set; }
         [JsonPropertyName("updated_at")] public DateTime UpdatedAt { get; set; }
-        [JsonPropertyName("media_type")] public string MediaType { get; set; }
+        [JsonPropertyName("media_type")] public string? MediaType { get; set; }
 
         [JsonConverter(typeof(JsonStringEnumConverter))]
         [JsonPropertyName("status")]
         public AiringStatus Status { get; set; }
 
-        [JsonPropertyName("genres")] public List<Genre> Genres { get; set; }
-        [JsonPropertyName("my_list_status")] public MyListStatus MyListStatus { get; set; }
+        [JsonPropertyName("genres")] public List<Genre>? Genres { get; set; }
+        [JsonPropertyName("my_list_status")] public MyListStatus? MyListStatus { get; set; }
         [JsonPropertyName("num_episodes")] public int NumEpisodes { get; set; }
-        [JsonPropertyName("start_season")] public StartSeason StartSeason { get; set; }
-        [JsonPropertyName("broadcast")] public Broadcast Broadcast { get; set; }
-        [JsonPropertyName("source")] public string Source { get; set; }
+        [JsonPropertyName("start_season")] public StartSeason? StartSeason { get; set; }
+        [JsonPropertyName("broadcast")] public Broadcast? Broadcast { get; set; }
+        [JsonPropertyName("source")] public string? Source { get; set; }
 
         [JsonPropertyName("average_episode_duration")]
         public int AverageEpisodeDuration { get; set; }
 
-        [JsonPropertyName("rating")] public string Rating { get; set; }
-        [JsonPropertyName("pictures")] public List<Picture> Pictures { get; set; }
-        [JsonPropertyName("background")] public string Background { get; set; }
-        [JsonPropertyName("related_anime")] public List<RelatedAnime> RelatedAnime { get; set; }
-        [JsonPropertyName("related_manga")] public List<object> RelatedManga { get; set; }
-        [JsonPropertyName("recommendations")] public List<Recommendation> Recommendations { get; set; }
-        [JsonPropertyName("studios")] public List<Studio> Studios { get; set; }
+        [JsonPropertyName("rating")] public string? Rating { get; set; }
+        [JsonPropertyName("pictures")] public List<Picture>? Pictures { get; set; }
+        [JsonPropertyName("background")] public string? Background { get; set; }
+        [JsonPropertyName("related_anime")] public List<RelatedAnime>? RelatedAnime { get; set; }
+        [JsonPropertyName("related_manga")] public List<object>? RelatedManga { get; set; }
+        [JsonPropertyName("recommendations")] public List<Recommendation>? Recommendations { get; set; }
+        [JsonPropertyName("studios")] public List<Studio>? Studios { get; set; }
     }
 
     public class AnimeList
     {
-        [JsonPropertyName("node")] public Anime Anime { get; set; }
+        [JsonPropertyName("node")] public Anime? Anime { get; set; }
     }
 
     public class SearchAnimeResponse
     {
-        [JsonPropertyName("data")] public List<AnimeList> Data { get; set; }
+        [JsonPropertyName("data")] public List<AnimeList>? Data { get; set; }
     }
 
     public enum AiringStatus

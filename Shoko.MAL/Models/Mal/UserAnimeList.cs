@@ -10,7 +10,7 @@ namespace Shoko.AniSync.Models.Mal
 {
     public class Paging
     {
-        [JsonPropertyName("next")] public string Next { get; set; }
+        [JsonPropertyName("next")] public string? Next { get; set; }
     }
 
     public enum Status
@@ -36,13 +36,13 @@ namespace Shoko.AniSync.Models.Mal
 
     public class UserAnimeListData
     {
-        [JsonPropertyName("node")] public Anime Anime { get; set; }
-        [JsonPropertyName("list_status")] public MyListStatus ListStatus { get; set; }
+        [JsonPropertyName("node")] public Anime? Anime { get; set; }
+        [JsonPropertyName("list_status")] public MyListStatus? ListStatus { get; set; }
     }
 
     public class UserAnimeList
     {
-        [JsonPropertyName("data")] public List<UserAnimeListData> Data { get; set; }
-        [JsonPropertyName("paging")] public Paging Paging { get; set; }
+        [JsonPropertyName("data")] public List<UserAnimeListData> Data { get; set; } = new List<UserAnimeListData>();
+        [JsonPropertyName("paging")] public Paging? Paging { get; set; }
     }
 }
