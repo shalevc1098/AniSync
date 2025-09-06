@@ -33,6 +33,14 @@
             
             <div class='form-group'>
                 <label class='checkbox-label'>
+                    <input type='checkbox' id='SetStartDateFromAnyEpisode' {SET_START_DATE_FROM_ANY_EPISODE_CHECKED}>
+                    <span>Flexible Start Date</span>
+                </label>
+                <small>When enabled: Sets start date when first watching any episode<br>When disabled (default): Only sets start date when first watching episode 1</small>
+            </div>
+            
+            <div class='form-group'>
+                <label class='checkbox-label'>
                     <input type='checkbox' id='EnableRewatchDetection' {ENABLE_REWATCH_DETECTION_CHECKED}>
                     <span>Enable Rewatch Detection</span>
                 </label>
@@ -119,6 +127,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 UpdateNsfw: document.getElementById('UpdateNsfw').checked,
                 EnableAutoSync: document.getElementById('EnableAutoSync').checked,
                 SyncOnlyCompleted: document.getElementById('SyncOnlyCompleted').checked,
+                SetStartDateFromAnyEpisode: document.getElementById('SetStartDateFromAnyEpisode').checked,
                 EnableRewatchDetection: document.getElementById('EnableRewatchDetection').checked,
                 AllowRollback: document.getElementById('AllowRollback').checked,
                 TitleMatchThreshold: parseFloat(document.getElementById('TitleMatchThreshold').value) || 0.8,

@@ -3,12 +3,13 @@ namespace Shoko.AniSync.Models.ViewModels
     public class SettingsViewModel
     {
         public bool IsAuthenticated { get; set; }
-        public string Username { get; set; }
+        public string Username { get; set; } = string.Empty;
         
         // Sync settings
         public bool UpdateNsfw { get; set; } = false;
         public bool EnableAutoSync { get; set; } = true;
         public bool SyncOnlyCompleted { get; set; } = true;
+        public bool SetStartDateFromAnyEpisode { get; set; } = false;
         public bool EnableRewatchDetection { get; set; } = true;
         public bool AllowRollback { get; set; } = false;
         

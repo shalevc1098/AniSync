@@ -49,19 +49,19 @@ namespace Shoko.AniSync.Controllers
 
         [HttpGet]
         [Route("buildAuthorizeRequestUrl")]
-        public string BuildAuthorizeRequestUrl(ApiName provider, string state = null)
+        public string BuildAuthorizeRequestUrl(ApiName provider, string? state = null)
         {
             return new ApiAuthentication(provider, _httpClientFactory, _loggerFactory, _memoryCache).BuildAuthorizeRequestUrl(state);
         }
 
         [HttpGet]
         [Route("authCallback")]
-        public IActionResult MalCallback(string code, string state = null)
+        public IActionResult MalCallback(string code, string? state = null)
         {
             ApiName provider = ApiName.Mal;
             try
             {
-                string shokoUsername = null;
+                string? shokoUsername = null;
                 
                 // First try to decode from state parameter
                 if (!string.IsNullOrEmpty(state))
@@ -190,7 +190,7 @@ namespace Shoko.AniSync.Controllers
             }
             
             // Get MAL auth for current Shoko user
-            UserApiAuth userAuth = null;
+            UserApiAuth? userAuth = null;
             if (!string.IsNullOrEmpty(shokoUsername) && shokoUsername != "None" && config != null)
             {
                 userAuth = config.GetAuthForShokoUser(shokoUsername);
@@ -248,7 +248,7 @@ namespace Shoko.AniSync.Controllers
             }
             
             // Get MAL auth for current Shoko user
-            UserApiAuth userAuth = null;
+            UserApiAuth? userAuth = null;
             if (!string.IsNullOrEmpty(shokoUsername) && shokoUsername != "None" && config != null)
             {
                 userAuth = config.GetAuthForShokoUser(shokoUsername);
@@ -260,7 +260,7 @@ namespace Shoko.AniSync.Controllers
             // For settings page, we show the form even if MAL is not connected yet
             // The user can configure their sync preferences before connecting to MAL
             
-            var html = GetSettingsHtml(isAuthenticated, malUsername, config, shokoUsername);
+            var html = GetSettingsHtml(isAuthenticated, malUsername, config, shokoUsername ?? "");
             return Content(html, "text/html");
         }
         
@@ -293,6 +293,7 @@ namespace Shoko.AniSync.Controllers
                     UpdateNsfw = model.UpdateNsfw,
                     EnableAutoSync = model.EnableAutoSync,
                     SyncOnlyCompleted = model.SyncOnlyCompleted,
+                    SetStartDateFromAnyEpisode = model.SetStartDateFromAnyEpisode,
                     EnableRewatchDetection = model.EnableRewatchDetection,
                     AllowRollback = model.AllowRollback,
                     TitleMatchThreshold = model.TitleMatchThreshold,
@@ -350,7 +351,7 @@ namespace Shoko.AniSync.Controllers
             }
             
             // Get MAL auth for current Shoko user
-            UserApiAuth userAuth = null;
+            UserApiAuth? userAuth = null;
             if (!string.IsNullOrEmpty(shokoUsername) && shokoUsername != "None" && config != null)
             {
                 userAuth = config.GetAuthForShokoUser(shokoUsername);
@@ -509,7 +510,7 @@ namespace Shoko.AniSync.Controllers
             {
                 var config = Config.GetConfig(_applicationPaths);
                 var currentUser = GetCurrentShokoUser();
-                UserApiAuth malAuth = null;
+                UserApiAuth? malAuth = null;
                 
                 if (!string.IsNullOrEmpty(currentUser) && config != null)
                 {
@@ -667,7 +668,7 @@ namespace Shoko.AniSync.Controllers
             return Json(result);
         }
         
-        private object TryGetAllUsers()
+        private object? TryGetAllUsers()
         {
             try
             {
@@ -707,7 +708,7 @@ namespace Shoko.AniSync.Controllers
             return "Could not get user ID";
         }
         
-        private object GetUserProperty(object user, string propertyName)
+        private object? GetUserProperty(object user, string propertyName)
         {
             try
             {
@@ -745,7 +746,7 @@ namespace Shoko.AniSync.Controllers
         // Authentication is determined by the logged-in HTTP context user
         
         // Helper method to get current Shoko user from query, header, or request
-        private string GetCurrentShokoUser()
+        private string? GetCurrentShokoUser()
         {
             try
             {
@@ -808,7 +809,7 @@ namespace Shoko.AniSync.Controllers
             }
         }
         
-        private object TryGetUserWatchData(int userID, int videoID)
+        private object? TryGetUserWatchData(int userID, int videoID)
         {
             try
             {
@@ -849,7 +850,7 @@ namespace Shoko.AniSync.Controllers
             }
 
             // Get the current Shoko user from session
-            string shokoUsername = null;
+            string? shokoUsername = null;
             try
             {
                 shokoUsername = HttpContext?.Session?.GetString("Username");
@@ -959,7 +960,7 @@ namespace Shoko.AniSync.Controllers
                 .Replace("{CONTENT}", content);
         }
         
-        private string GetSettingsHtml(bool isAuthenticated, string username, Config config, string shokoUsername)
+        private string GetSettingsHtml(bool isAuthenticated, string username, Config? config, string shokoUsername)
         {
             var content = LoadEmbeddedResource("settings.html");
             
@@ -972,6 +973,7 @@ namespace Shoko.AniSync.Controllers
             _logger.LogInformation("Retrieved updateNsfw: {UpdateNsfw} for user: {ShokoUsername}", updateNsfw, shokoUsername);
             bool enableAutoSync = config?.GetEnableAutoSync(shokoUsername) ?? true;
             bool syncOnlyCompleted = config?.GetSyncOnlyCompleted(shokoUsername) ?? true;
+            bool setStartDateFromAnyEpisode = config?.GetSetStartDateFromAnyEpisode(shokoUsername) ?? false;
             bool enableRewatchDetection = config?.GetEnableRewatchDetection(shokoUsername) ?? true;
             bool allowRollback = config?.GetAllowRollback(shokoUsername) ?? false;
             double titleMatchThreshold = config?.GetTitleMatchThreshold(shokoUsername) ?? 0.8;
@@ -987,6 +989,7 @@ namespace Shoko.AniSync.Controllers
                 .Replace("{UPDATE_NSFW_CHECKED}", updateNsfw ? "checked" : "")
                 .Replace("{ENABLE_AUTO_SYNC_CHECKED}", enableAutoSync ? "checked" : "")
                 .Replace("{SYNC_ONLY_COMPLETED_CHECKED}", syncOnlyCompleted ? "checked" : "")
+                .Replace("{SET_START_DATE_FROM_ANY_EPISODE_CHECKED}", setStartDateFromAnyEpisode ? "checked" : "")
                 .Replace("{ENABLE_REWATCH_DETECTION_CHECKED}", enableRewatchDetection ? "checked" : "")
                 .Replace("{ALLOW_ROLLBACK_CHECKED}", allowRollback ? "checked" : "")
                 .Replace("{TITLE_MATCH_THRESHOLD}", titleMatchThreshold.ToString("F1"))
@@ -1262,7 +1265,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     internal class ShokoUser
     {
         public int ID { get; set; }
-        public string Username { get; set; }
+        public string Username { get; set; } = string.Empty;
         public bool IsAdmin { get; set; }
     }
 }
