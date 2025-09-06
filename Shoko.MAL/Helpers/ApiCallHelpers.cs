@@ -12,14 +12,14 @@ namespace Shoko.AniSync.Helpers
 {
     public class ApiCallHelpers : IApiCallHelpers
     {
-        private MalApiCalls _malApiCalls;
+        private MalApiCalls? _malApiCalls;
         //private AniListApiCalls _aniListApiCalls;
         //private KitsuApiCalls _kitsuApiCalls;
         //private AnnictApiCalls _annictApiCalls;
         //private ShikimoriApiCalls _shikimoriApiCalls;
         //private SimklApiCalls _simklApiCalls;
 
-        public ApiCallHelpers(MalApiCalls malApiCalls = null/*,
+        public ApiCallHelpers(MalApiCalls? malApiCalls = null/*,
             AniListApiCalls aniListApiCalls = null,
             KitsuApiCalls kitsuApiCalls = null,
             AnnictApiCalls annictApiCalls = null,
@@ -34,7 +34,7 @@ namespace Shoko.AniSync.Helpers
             //_simklApiCalls = simklApiCalls;
         }
 
-        public async Task<List<Anime>> SearchAnime(string query, string shokoUsername = null)
+        public async Task<List<Anime>?> SearchAnime(string query, string? shokoUsername = null)
         {
             bool updateNsfw = shokoUsername != null 
                 ? Plugin.Instance!.Config.GetUpdateNsfw(shokoUsername) 
@@ -73,10 +73,10 @@ namespace Shoko.AniSync.Helpers
             //    return ShikimoriSearchAnimeConvertedList(animeList, updateNsfw);
             //}
 
-            return null;
+            return new List<Anime>();
         }
 
-        public async Task<Anime> GetAnime(int id, string? alternativeId = null, bool getRelated = false, string shokoUsername = null)
+        public async Task<Anime?> GetAnime(int id, string? alternativeId = null, bool getRelated = false, string? shokoUsername = null)
         {
             if (_malApiCalls != null)
             {
@@ -120,8 +120,8 @@ namespace Shoko.AniSync.Helpers
             return null;
         }
 
-        public async Task<UpdateAnimeStatusResponse> UpdateAnime(int animeId, int numberOfWatchedEpisodes, Status status,
-            bool? isRewatching = null, int? numberOfTimesRewatched = null, DateTime? startDate = null, DateTime? endDate = null, int? score = null, string alternativeId = null, AnimeOfflineDatabaseHelpers.OfflineDatabaseResponse ids = null, bool? isShow = null, string shokoUsername = null)
+        public async Task<UpdateAnimeStatusResponse?> UpdateAnime(int animeId, int numberOfWatchedEpisodes, Status status,
+            bool? isRewatching = null, int? numberOfTimesRewatched = null, DateTime? startDate = null, DateTime? endDate = null, int? score = null, string? alternativeId = null, AnimeOfflineDatabaseHelpers.OfflineDatabaseResponse? ids = null, bool? isShow = null, string? shokoUsername = null)
         {
             if (_malApiCalls != null)
             {
@@ -292,7 +292,7 @@ namespace Shoko.AniSync.Helpers
 
             return null;
         }
-        public async Task<MalApiCalls.User> GetUser(string shokoUsername = null)
+        public async Task<MalApiCalls.User?> GetUser(string? shokoUsername = null)
         {
             if (_malApiCalls != null)
             {
@@ -346,7 +346,7 @@ namespace Shoko.AniSync.Helpers
             if (_malApiCalls != null)
             {
                 var malAnimeList = await _malApiCalls.GetUserAnimeList(status);
-                return malAnimeList?.Select(animeList => animeList.Anime).ToList();
+                return malAnimeList?.Select(animeList => animeList.Anime).Where(anime => anime != null).Cast<Anime>().ToList() ?? new List<Anime>();
             }
 
             //if (_aniListApiCalls != null && userId != null)
@@ -546,7 +546,7 @@ namespace Shoko.AniSync.Helpers
             //    }
             //}
 
-            return null;
+            return new List<Anime>();
         }
     }
 }

@@ -44,7 +44,7 @@ namespace Shoko.AniSync.Api
         /// <exception cref="NullReferenceException">Authentication details not found.</exception>
         /// <exception cref="Exception">Non-200 response.</exception>
         /// <exception cref="AuthenticationException">Could not authenticate with the API.</exception>
-        public async Task<HttpResponseMessage?> AuthenticatedApiCall(ApiName provider, CallType callType, string url, FormUrlEncodedContent formUrlEncodedContent = null, StringContent stringContent = null, Dictionary<string, string>? requestHeaders = null, string shokoUsername = null)
+        public async Task<HttpResponseMessage?> AuthenticatedApiCall(ApiName provider, CallType callType, string url, FormUrlEncodedContent? formUrlEncodedContent = null, StringContent? stringContent = null, Dictionary<string, string>? requestHeaders = null, string? shokoUsername = null)
         {
             int attempts = 0;
             int timeoutSeconds = defaultTimeoutSeconds;
@@ -56,7 +56,7 @@ namespace Shoko.AniSync.Api
                 return null;
             }
             
-            UserApiAuth? auth = Plugin.Instance!.Config.GetAuthForShokoUser(shokoUsername, provider);
+            UserApiAuth? auth = Plugin.Instance?.Config?.GetAuthForShokoUser(shokoUsername, provider);
             
             if (auth == null)
             {
@@ -127,7 +127,7 @@ namespace Shoko.AniSync.Api
                             UserApiAuth newAuth;
                             try
                             {
-                                newAuth = new ApiAuthentication(provider, _httpClientFactory, _loggerFactory).GetToken(refreshToken: auth.RefreshToken, shokoUsername: auth.ShokoUsername);
+                                newAuth = new ApiAuthentication(provider, _httpClientFactory, _loggerFactory, _memoryCache).GetToken(refreshToken: auth.RefreshToken, shokoUsername: auth.ShokoUsername);
                             }
                             catch (Exception e)
                             {

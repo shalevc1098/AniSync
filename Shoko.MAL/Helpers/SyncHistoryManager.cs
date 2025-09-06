@@ -15,7 +15,7 @@ namespace Shoko.AniSync.Helpers
         private readonly string _historyFilePath;
         private readonly ILogger<SyncHistoryManager> _logger;
         private readonly SemaphoreSlim _fileLock = new SemaphoreSlim(1, 1);
-        private List<SyncHistoryEntry> _history;
+        private List<SyncHistoryEntry> _history = new List<SyncHistoryEntry>();
         private readonly int _maxHistoryEntries = 1000; // Keep last 1000 entries
 
         public SyncHistoryManager(string pluginPath, ILoggerFactory loggerFactory)
@@ -70,7 +70,7 @@ namespace Shoko.AniSync.Helpers
             }
         }
 
-        public async Task<List<SyncHistoryEntry>> GetHistoryAsync(int? limit = null, string shokoUsername = null)
+        public async Task<List<SyncHistoryEntry>> GetHistoryAsync(int? limit = null, string? shokoUsername = null)
         {
             await _fileLock.WaitAsync();
             try
@@ -95,7 +95,7 @@ namespace Shoko.AniSync.Helpers
             }
         }
 
-        public async Task<SyncHistoryStats> GetStatsAsync(string shokoUsername = null)
+        public async Task<SyncHistoryStats> GetStatsAsync(string? shokoUsername = null)
         {
             await _fileLock.WaitAsync();
             try
@@ -137,7 +137,7 @@ namespace Shoko.AniSync.Helpers
             }
         }
 
-        public async Task ClearHistoryAsync(string shokoUsername = null)
+        public async Task ClearHistoryAsync(string? shokoUsername = null)
         {
             await _fileLock.WaitAsync();
             try
@@ -178,7 +178,7 @@ namespace Shoko.AniSync.Helpers
         }
 
         public void LogSync(string animeName, int episodeNumber, int totalEpisodes, string action, 
-            bool success, string shokoUsername, string malUsername, string errorMessage = null, string details = null)
+            bool success, string shokoUsername, string malUsername, string? errorMessage = null, string? details = null)
         {
             var entry = new SyncHistoryEntry
             {

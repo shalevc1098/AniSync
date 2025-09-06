@@ -29,13 +29,13 @@ namespace Shoko.AniSync.Api
         private readonly string _clientId = "cb2cb041c1452a990a065d5e7ecdf89b";
         private readonly string _clientSecret = "REDACTED";
 
-        public ApiAuthentication(ApiName provider, IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory, IMemoryCache memoryCache = null)
+        public ApiAuthentication(ApiName provider, IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory, IMemoryCache? memoryCache = null)
         {
             _provider = provider;
             _httpClientFactory = httpClientFactory;
             _loggerFactory = loggerFactory;
             _logger = _loggerFactory.CreateLogger<ApiAuthentication>();
-            _memoryCache = memoryCache;
+            _memoryCache = memoryCache ?? new MemoryCache(new MemoryCacheOptions());
 
             _providerApiAuth =  new ProviderApiAuth()
             {
@@ -53,7 +53,7 @@ namespace Shoko.AniSync.Api
             _redirectUrl = "http://localhost:8111/AniSync/authCallback";
         }
 
-        public string BuildAuthorizeRequestUrl(string state = null)
+        public string BuildAuthorizeRequestUrl(string? state = null)
         {
             switch (_provider)
             {
@@ -89,7 +89,7 @@ namespace Shoko.AniSync.Api
                 List<KeyValuePair<string, string>> content = new List<KeyValuePair<string, string>>() {
                         new KeyValuePair<string, string>("client_id", _providerApiAuth.ClientId),
                         new KeyValuePair<string, string>("client_secret", _providerApiAuth.ClientSecret),
-                        new KeyValuePair<string, string>("code", code),
+                        new KeyValuePair<string, string>("code", code ?? string.Empty),
                         new KeyValuePair<string, string>("grant_type", "authorization_code"),
                         new KeyValuePair<string, string>("redirect_uri", _redirectUrl)
                     };
@@ -111,19 +111,19 @@ namespace Shoko.AniSync.Api
 
                 StreamReader streamReader = new StreamReader(content);
 
-                TokenResponse tokenResponse = JsonSerializer.Deserialize<TokenResponse>(streamReader.ReadToEnd());
+                TokenResponse? tokenResponse = JsonSerializer.Deserialize<TokenResponse>(streamReader.ReadToEnd());
 
-                Config? pluginConfig = Plugin.Instance.Config;
-                if (pluginConfig != null)
+                Config? pluginConfig = Plugin.Instance?.Config;
+                if (pluginConfig != null && tokenResponse != null)
                 {
                     UserApiAuth newUserApiAuth = new UserApiAuth
                     {
-                        AccessToken = tokenResponse.access_token
+                        AccessToken = tokenResponse.access_token ?? string.Empty
                     };
 
                     if (_provider is ApiName.Mal)
                     {
-                        newUserApiAuth.RefreshToken = tokenResponse.refresh_token;
+                        newUserApiAuth.RefreshToken = tokenResponse.refresh_token ?? string.Empty;
                         
                         // Need to temporarily save auth to make API call to get username
                         // This will be properly saved later with the username
@@ -134,7 +134,7 @@ namespace Shoko.AniSync.Api
                             if (!string.IsNullOrEmpty(shokoUsername))
                             {
                                 pluginConfig.SetAuthForShokoUser(shokoUsername, _provider, newUserApiAuth);
-                                var malApi = new MalApiCalls(_httpClientFactory, _loggerFactory, _memoryCache ?? new MemoryCache(new MemoryCacheOptions()), new Delayer());
+                                var malApi = new MalApiCalls(_httpClientFactory, _loggerFactory, _memoryCache, new Delayer());
                                 var userInfo = malApi.GetUserInformation(shokoUsername).Result;
                                 if (userInfo != null)
                                 {
@@ -170,7 +170,7 @@ namespace Shoko.AniSync.Api
             throw new AuthenticationException($"Could not retrieve {_provider} token: " + response.StatusCode + " - " + response.ReasonPhrase);
         }
 
-        public async Task RefreshAccessToken(string shokoUsername)
+        public Task RefreshAccessToken(string shokoUsername)
         {
             var config = Plugin.Instance?.Config;
             var auth = config?.GetAuthForShokoUser(shokoUsername, _provider);
@@ -180,6 +180,7 @@ namespace Shoko.AniSync.Api
             }
             
             GetToken(refreshToken: auth.RefreshToken, shokoUsername: shokoUsername);
+            return Task.CompletedTask;
         }
         
         private static string GenerateCodeChallenge()
@@ -190,7 +191,7 @@ namespace Shoko.AniSync.Api
     }
     public class TokenResponse
     {
-        public string access_token { get; set; }
-        public string refresh_token { get; set; }
+        public string access_token { get; set; } = string.Empty;
+        public string refresh_token { get; set; } = string.Empty;
     }
 }

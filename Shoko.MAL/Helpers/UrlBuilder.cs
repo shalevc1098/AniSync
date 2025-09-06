@@ -11,7 +11,7 @@ namespace Shoko.AniSync.Helpers
         /// <summary>
         /// Gets or sets the base URL.
         /// </summary>
-        public string Base { get; set; }
+        public string Base { get; set; } = string.Empty;
 
         /// <summary>
         /// Gets or sets the query parameters.

@@ -11,7 +11,7 @@ namespace Shoko.AniSync.Helpers
 {
     public class AnimeOfflineDatabaseHelpers
     {
-        public static async Task<OfflineDatabaseResponse> GetProviderIdsFromMetadataProvider(HttpClient httpClient, int metadataId, Source source)
+        public static async Task<OfflineDatabaseResponse?> GetProviderIdsFromMetadataProvider(HttpClient httpClient, int metadataId, Source source)
         {
             // See https://arm.haglund.dev/docs#tag/v2/operation/v2-getIds
             // TODO: make URL user-configurable to allow self-hosting the server.
