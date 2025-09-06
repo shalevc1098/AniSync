@@ -1,15 +1,15 @@
 <div class='card'>
-    <h1 class='card-title'>⚙️ Settings</h1>
+    <h1 class='card-title'><i class="fas fa-cog" style="margin-right: 8px;"></i>Settings</h1>
     
     {USER_SETTINGS_INFO}
     
-    <form method='post' action='/anisync/settings'>
+    <div id='settings-container'>
         <div class='settings-section'>
             <h3>Sync Configuration</h3>
             
             <div class='form-group'>
                 <label class='checkbox-label'>
-                    <input type='checkbox' name='UpdateNsfw' {UPDATE_NSFW_CHECKED}>
+                    <input type='checkbox' id='UpdateNsfw' {UPDATE_NSFW_CHECKED}>
                     <span>Sync NSFW Content</span>
                 </label>
                 <small>Include adult/NSFW anime in synchronization</small>
@@ -17,7 +17,7 @@
             
             <div class='form-group'>
                 <label class='checkbox-label'>
-                    <input type='checkbox' name='EnableAutoSync' {ENABLE_AUTO_SYNC_CHECKED}>
+                    <input type='checkbox' id='EnableAutoSync' {ENABLE_AUTO_SYNC_CHECKED}>
                     <span>Enable Automatic Sync</span>
                 </label>
                 <small>Automatically sync watched episodes to MyAnimeList</small>
@@ -25,7 +25,7 @@
             
             <div class='form-group'>
                 <label class='checkbox-label'>
-                    <input type='checkbox' name='SyncOnlyCompleted' {SYNC_ONLY_COMPLETED_CHECKED}>
+                    <input type='checkbox' id='SyncOnlyCompleted' {SYNC_ONLY_COMPLETED_CHECKED}>
                     <span>Sync Only Completed Episodes</span>
                 </label>
                 <small>Only sync episodes marked as fully watched</small>
@@ -33,7 +33,7 @@
             
             <div class='form-group'>
                 <label class='checkbox-label'>
-                    <input type='checkbox' name='EnableRewatchDetection' {ENABLE_REWATCH_DETECTION_CHECKED}>
+                    <input type='checkbox' id='EnableRewatchDetection' {ENABLE_REWATCH_DETECTION_CHECKED}>
                     <span>Enable Rewatch Detection</span>
                 </label>
                 <small>Detect and track when you're rewatching a series</small>
@@ -41,7 +41,7 @@
             
             <div class='form-group'>
                 <label class='checkbox-label'>
-                    <input type='checkbox' name='AllowRollback' {ALLOW_ROLLBACK_CHECKED}>
+                    <input type='checkbox' id='AllowRollback' {ALLOW_ROLLBACK_CHECKED}>
                     <span>Allow Episode Rollback</span>
                 </label>
                 <small>Allow reducing episode count on MAL if local count is lower</small>
@@ -53,13 +53,13 @@
             
             <div class='form-group'>
                 <label>Title Match Threshold</label>
-                <input type='number' name='TitleMatchThreshold' value='{TITLE_MATCH_THRESHOLD}' min='0' max='1' step='0.1' class='form-control'>
+                <input type='number' id='TitleMatchThreshold' value='{TITLE_MATCH_THRESHOLD}' min='0' max='1' step='0.1' class='form-control'>
                 <small>Minimum similarity score for title matching (0.0 - 1.0)</small>
             </div>
             
             <div class='form-group'>
                 <label class='checkbox-label'>
-                    <input type='checkbox' name='UseFuzzyMatching' {USE_FUZZY_MATCHING_CHECKED}>
+                    <input type='checkbox' id='UseFuzzyMatching' {USE_FUZZY_MATCHING_CHECKED}>
                     <span>Use Fuzzy Title Matching</span>
                 </label>
                 <small>Enable flexible title matching for better results</small>
@@ -71,13 +71,13 @@
             
             <div class='form-group'>
                 <label>Sync Delay (seconds)</label>
-                <input type='number' name='SyncDelaySeconds' value='{SYNC_DELAY_SECONDS}' min='0' max='60' class='form-control'>
+                <input type='number' id='SyncDelaySeconds' value='{SYNC_DELAY_SECONDS}' min='0' max='60' class='form-control'>
                 <small>Delay between sync operations to avoid rate limiting</small>
             </div>
             
             <div class='form-group'>
                 <label class='checkbox-label'>
-                    <input type='checkbox' name='EnableDebugLogging' {ENABLE_DEBUG_LOGGING_CHECKED}>
+                    <input type='checkbox' id='EnableDebugLogging' {ENABLE_DEBUG_LOGGING_CHECKED}>
                     <span>Enable Debug Logging</span>
                 </label>
                 <small>Output detailed debug information to logs</small>
@@ -85,23 +85,189 @@
         </div>
         
         <div class='form-actions'>
-            <button type='submit' class='btn btn-primary'>Save Settings</button>
+            <button id='saveSettingsBtn' class='btn btn-primary'>Save Settings</button>
             <a href='/anisync' class='btn btn-secondary'>Cancel</a>
         </div>
-    </form>
+    </div>
     
-    <div class='settings-section'>
+    <div class='settings-section' style='margin-top: 40px;'>
         <h3>Connection Status</h3>
         <div class='connection-status'>
             <p>MyAnimeList: <span class='status-badge {CONNECTION_STATUS_CLASS}'>{CONNECTION_STATUS}</span></p>
             <p>Username: <strong>{USERNAME}</strong></p>
             <p>Last Refresh: {LAST_REFRESH}</p>
-            <form method='post' action='/anisync/refresh-token' style='margin-top: 10px;'>
-                <button type='submit' class='btn btn-secondary'>Refresh Connection</button>
-            </form>
+            <div style='margin-top: 15px; display: flex; gap: 10px;'>
+                <button id='logoutBtn' class='btn btn-danger'><i class="fas fa-sign-out-alt" style="margin-right: 8px;"></i>Logout</button>
+                <button id='refreshTokenBtn' class='btn btn-secondary'><i class="fas fa-sync" style="margin-right: 8px;"></i>Refresh Connection</button>
+            </div>
         </div>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Handle save button click with pure JSON
+    const saveBtn = document.getElementById('saveSettingsBtn');
+    if (saveBtn) {
+        saveBtn.addEventListener('click', async function(e) {
+            e.preventDefault();
+            
+            console.log('=== SAVING SETTINGS ===');
+            
+            // Get all settings values by ID
+            const settings = {
+                UpdateNsfw: document.getElementById('UpdateNsfw').checked,
+                EnableAutoSync: document.getElementById('EnableAutoSync').checked,
+                SyncOnlyCompleted: document.getElementById('SyncOnlyCompleted').checked,
+                EnableRewatchDetection: document.getElementById('EnableRewatchDetection').checked,
+                AllowRollback: document.getElementById('AllowRollback').checked,
+                TitleMatchThreshold: parseFloat(document.getElementById('TitleMatchThreshold').value) || 0.8,
+                UseFuzzyMatching: document.getElementById('UseFuzzyMatching').checked,
+                SyncDelaySeconds: parseInt(document.getElementById('SyncDelaySeconds').value) || 5,
+                EnableDebugLogging: document.getElementById('EnableDebugLogging').checked
+            };
+            
+            console.log('Settings object:', settings);
+            console.log('JSON string:', JSON.stringify(settings));
+            
+            try {
+                const headers = {
+                    'Content-Type': 'application/json',
+                };
+                
+                // Add apikey header
+                const apiSessionStr = localStorage.getItem('apiSession');
+                if (apiSessionStr) {
+                    try {
+                        const apiSession = JSON.parse(apiSessionStr);
+                        if (apiSession && apiSession.apikey) {
+                            headers['apikey'] = apiSession.apikey;
+                            console.log('Added apikey header');
+                        }
+                    } catch (e) {
+                        console.error('Failed to parse apiSession:', e);
+                    }
+                }
+                
+                console.log('Request headers:', headers);
+                
+                const response = await fetch('/anisync/settings', {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify(settings)
+                });
+                
+                console.log('Response status:', response.status);
+                console.log('Response ok:', response.ok);
+                
+                if (response.ok) {
+                    console.log('SUCCESS! Redirecting...');
+                    window.location.href = '/anisync/settings';
+                } else {
+                    const responseText = await response.text();
+                    console.error('Server response:', responseText);
+                    alert('Failed to save settings: ' + response.status + ' - ' + responseText);
+                }
+            } catch (error) {
+                console.error('Error saving settings:', error);
+                alert('Error saving settings: ' + error.message);
+            }
+        });
+    }
+    
+    // Handle refresh token button click
+    const refreshBtn = document.getElementById('refreshTokenBtn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', async function(e) {
+            e.preventDefault();
+            console.log('=== REFRESHING TOKEN ===');
+            
+            try {
+                const headers = {};
+                
+                // Add apikey header for authentication
+                const apiSessionStr = localStorage.getItem('apiSession');
+                if (apiSessionStr) {
+                    try {
+                        const apiSession = JSON.parse(apiSessionStr);
+                        if (apiSession && apiSession.apikey) {
+                            headers['apikey'] = apiSession.apikey;
+                            console.log('Added apikey header for refresh');
+                        }
+                    } catch (e) {
+                        console.error('Failed to parse apiSession:', e);
+                    }
+                }
+                
+                console.log('Sending refresh request with headers:', headers);
+                
+                const response = await fetch('/anisync/refresh-token', {
+                    method: 'POST',
+                    headers: headers
+                });
+                
+                console.log('Refresh response status:', response.status);
+                
+                if (response.ok) {
+                    console.log('Token refreshed successfully!');
+                    window.location.href = '/anisync/settings';
+                } else {
+                    const responseText = await response.text();
+                    console.error('Refresh failed:', responseText);
+                    alert('Failed to refresh connection: ' + response.status);
+                }
+            } catch (error) {
+                console.error('Error refreshing token:', error);
+                alert('Error refreshing connection: ' + error.message);
+            }
+        });
+    }
+    
+    // Handle logout button click
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', async function(e) {
+            e.preventDefault();
+            console.log('=== LOGGING OUT ===');
+            
+            if (confirm('Are you sure you want to disconnect from MyAnimeList?')) {
+                try {
+                    const headers = {};
+                    const apiSessionStr = localStorage.getItem('apiSession');
+                    if (apiSessionStr) {
+                        try {
+                            const apiSession = JSON.parse(apiSessionStr);
+                            if (apiSession && apiSession.apikey) {
+                                headers['apikey'] = apiSession.apikey;
+                            }
+                        } catch (e) {
+                            console.error('Failed to parse apiSession:', e);
+                        }
+                    }
+                    
+                    const response = await fetch('/anisync/Logout', {
+                        method: 'POST',
+                        headers: headers
+                    });
+                    
+                    console.log('Logout response status:', response.status);
+                    if (response.ok) {
+                        console.log('Logged out successfully!');
+                        window.location.href = '/anisync';
+                    } else {
+                        const responseText = await response.text();
+                        console.error('Logout failed:', responseText);
+                        alert('Failed to logout: ' + response.status);
+                    }
+                } catch (error) {
+                    console.error('Error during logout:', error);
+                    alert('Error during logout: ' + error.message);
+                }
+            }
+        });
+    }
+});
+</script>
 
 <style>
 .settings-section {

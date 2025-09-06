@@ -1,8 +1,8 @@
 <div class='alert alert-success'>
-    ✅ Connected to MyAnimeList as <strong>{USERNAME}</strong>
+    <i class="fas fa-check-circle" style="margin-right: 8px;"></i>Connected to MyAnimeList as <strong>{USERNAME}</strong>
 </div>
 <div class='alert alert-info'>
-    👤 Shoko User: <strong>{SHOKO_USER}</strong> | MAL Account: <strong>{USERNAME}</strong>
+    <i class="fas fa-user" style="margin-right: 8px;"></i>Shoko User: <strong>{SHOKO_USER}</strong> | MAL Account: <strong>{USERNAME}</strong>
 </div>
 <div class='stats-grid'>
     <div class='stat-card'>
@@ -22,3 +22,39 @@
         <div class='stat-label'>Pending Updates</div>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', async function() {
+    // Get apiSession and fetch actual username from API
+    const apiSessionStr = localStorage.getItem('apiSession');
+    if (apiSessionStr) {
+        try {
+            const apiSession = JSON.parse(apiSessionStr);
+            
+            // Always fetch username from API, not from stored session
+            if (apiSession && apiSession.apikey) {
+                const userResponse = await fetch('/api/v3/User/Current', {
+                    headers: {
+                        'apikey': apiSession.apikey
+                    }
+                });
+                
+                if (userResponse.ok) {
+                    const userData = await userResponse.json();
+                    if (userData && userData.Username) {
+                        // Store the REAL username from API in sessionStorage
+                        sessionStorage.setItem('currentShokoUser', userData.Username);
+                        console.log('Stored actual username from API:', userData.Username);
+                        
+                        // Store for use in other API calls
+                        window.currentShokoUser = userData.Username;
+                        window.shokoApiKey = apiSession.apikey;
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('Failed to fetch user from API:', e);
+        }
+    }
+});
+</script>

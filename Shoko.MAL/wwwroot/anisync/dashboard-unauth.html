@@ -1,9 +1,81 @@
 <div class='alert alert-warning'>
-    ⚠️ Not connected to MyAnimeList. Please log in to start syncing.
+    <i class="fas fa-exclamation-triangle" style="margin-right: 8px;"></i>Not connected to MyAnimeList. Please log in to start syncing.
 </div>
 <p style='margin-top: 2rem; color: #4a5568;'>
     Connect your MyAnimeList account to automatically sync your watch history from Shoko Server.
 </p>
 <div style='margin-top: 2rem;'>
-    <a href='/anisync/login' class='btn btn-primary'>Login with MyAnimeList</a>
+    <button id='connectMalBtn' class='btn btn-primary'>Connect MyAnimeList Account</button>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', async function() {
+    // Check for apiSession in localStorage
+    const apiSessionStr = localStorage.getItem('apiSession');
+    
+    if (!apiSessionStr) {
+        // No session found, redirect to login
+        document.querySelector('.alert-warning').innerHTML = 
+            '<i class="fas fa-exclamation-triangle" style="margin-right: 8px;"></i>You must log in to Shoko Server first. <a href="/">Go to main page to log in</a>';
+        document.getElementById('connectMalBtn').style.display = 'none';
+        return;
+    }
+    
+    let apiSession;
+    let currentUser = null;
+    
+    try {
+        apiSession = JSON.parse(apiSessionStr);
+        
+        // ALWAYS get the username from the API, not from stored session
+        if (apiSession && apiSession.apikey) {
+            const userResponse = await fetch('/api/v3/User/Current', {
+                headers: {
+                    'apikey': apiSession.apikey
+                }
+            });
+            
+            if (!userResponse.ok) {
+                throw new Error('Invalid API session');
+            }
+            
+            const userData = await userResponse.json();
+            if (userData && userData.Username) {
+                currentUser = userData.Username;
+                console.log('Got username from API:', currentUser);
+                
+                // Store username for use in other API calls
+                window.currentShokoUser = currentUser;
+                window.shokoApiKey = apiSession.apikey;
+            } else {
+                throw new Error('No username in API response');
+            }
+        } else {
+            throw new Error('No API key in session');
+        }
+    } catch (e) {
+        console.error('Session validation failed:', e);
+        document.querySelector('.alert-warning').innerHTML = 
+            '<i class="fas fa-exclamation-triangle" style="margin-right: 8px;"></i>Your session has expired. <a href="/">Please log in again</a>';
+        document.getElementById('connectMalBtn').style.display = 'none';
+        return;
+    }
+    
+    document.getElementById('connectMalBtn').addEventListener('click', async function() {
+        try {
+            // Encode username as state
+            const state = btoa(currentUser);
+            
+            // Get OAuth URL with state
+            const response = await fetch(`/anisync/buildAuthorizeRequestUrl?provider=Mal&state=${encodeURIComponent(state)}`);
+            const authUrl = await response.text();
+            
+            // Redirect to MAL OAuth
+            window.location.href = authUrl;
+        } catch (error) {
+            console.error('Failed to get auth URL:', error);
+            alert('Failed to connect to MyAnimeList. Please try again.');
+        }
+    });
+});
+</script>

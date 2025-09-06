@@ -4,6 +4,7 @@
     <meta charset='utf-8' />
     <meta name='viewport' content='width=device-width, initial-scale=1.0' />
     <title>{TITLE} - Shoko MAL Sync</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
@@ -194,12 +195,32 @@
         a:hover { 
             color: #5cc9f5; 
         }
+        .user-info {
+            display: flex;
+            align-items: center;
+            padding: 0.5rem 0;
+        }
+        .user-avatar {
+            border: 2px solid #46bcf2;
+            transition: transform 0.2s;
+        }
+        .user-avatar:hover {
+            transform: scale(1.1);
+        }
+        .user-avatar-fallback {
+            border: 2px solid #46bcf2;
+            font-weight: bold;
+            transition: transform 0.2s;
+        }
+        .user-avatar-fallback:hover {
+            transform: scale(1.1);
+        }
     </style>
 </head>
 <body>
     <nav class='navbar'>
         <div class='nav-container'>
-            <a href='/anisync' class='logo'>🎌 Shoko MAL Sync</a>
+            <a href='/anisync' class='logo'><i class="fas fa-sync-alt" style="margin-right: 8px;"></i>Shoko MAL Sync</a>
             <ul class='nav-links'>
                 {NAVBAR}
             </ul>
@@ -208,5 +229,35 @@
     <main class='main-content'>
         {CONTENT}
     </main>
+    <script>
+    // Check if we have apiSession and need to pass it to the server
+    (function() {
+        const apiSessionStr = localStorage.getItem('apiSession');
+        if (apiSessionStr) {
+            try {
+                const apiSession = JSON.parse(apiSessionStr);
+                if (apiSession && apiSession.apikey) {
+                    // Store globally for other scripts to use
+                    window.shokoApiKey = apiSession.apikey;
+                    
+                    // Make all fetch requests include the apikey header
+                    const originalFetch = window.fetch;
+                    window.fetch = function(...args) {
+                        let [url, options = {}] = args;
+                        if (!options.headers) {
+                            options.headers = {};
+                        }
+                        if (window.shokoApiKey) {
+                            options.headers['apikey'] = window.shokoApiKey;
+                        }
+                        return originalFetch.call(this, url, options);
+                    };
+                }
+            } catch (e) {
+                console.error('Failed to parse apiSession:', e);
+            }
+        }
+    })();
+    </script>
 </body>
 </html>

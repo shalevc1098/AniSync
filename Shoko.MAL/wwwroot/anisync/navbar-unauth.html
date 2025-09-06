@@ -1,1 +1,63 @@
-<li><a href='/anisync/login' class='btn btn-primary'>Login with MAL</a></li>
+<li>
+    <div class='user-info nav-link' id='userInfo'>
+        <img src='' alt='Avatar' class='user-avatar' id='userAvatar' style='width: 32px; height: 32px; border-radius: 50%; margin-right: 8px; vertical-align: middle; display: none;'>
+        <span class='user-avatar-fallback' id='userAvatarFallback' style='display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; margin-right: 8px; vertical-align: middle; font-size: 14px; font-weight: 600;'><i class="fas fa-user"></i></span>
+        <span id='userName' style='font-weight: 600; color: #46bcf2;'>Loading...</span>
+    </div>
+</li>
+
+<script>
+document.addEventListener('DOMContentLoaded', async function() {
+    const apiSessionStr = localStorage.getItem('apiSession');
+    
+    if (apiSessionStr) {
+        try {
+            const apiSession = JSON.parse(apiSessionStr);
+            
+            if (apiSession && apiSession.apikey) {
+                const response = await fetch('/api/v3/User/Current', {
+                    headers: {
+                        'apikey': apiSession.apikey
+                    }
+                });
+                
+                if (response.ok) {
+                    const userData = await response.json();
+                    const userName = document.getElementById('userName');
+                    const userAvatar = document.getElementById('userAvatar');
+                    const userAvatarFallback = document.getElementById('userAvatarFallback');
+                    
+                    if (userData) {
+                        // Update username
+                        if (userData.Username) {
+                            userName.textContent = userData.Username;
+                        }
+                        
+                        // Check for avatar
+                        if (userData.Avatar || userData.AvatarUrl || userData.avatar) {
+                            const avatarUrl = userData.Avatar || userData.AvatarUrl || userData.avatar;
+                            userAvatar.src = avatarUrl;
+                            userAvatar.style.display = 'inline-block';
+                            userAvatarFallback.style.display = 'none';
+                        } else {
+                            // Use first letter of username as fallback
+                            if (userData.Username) {
+                                userAvatarFallback.textContent = userData.Username.charAt(0).toUpperCase();
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('Failed to load user info:', e);
+            document.getElementById('userName').textContent = 'Unknown User';
+        }
+    } else {
+        // No session, hide user info
+        const userInfo = document.getElementById('userInfo');
+        if (userInfo) {
+            userInfo.style.display = 'none';
+        }
+    }
+});
+</script>
