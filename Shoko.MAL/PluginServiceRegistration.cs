@@ -23,7 +23,7 @@ namespace Shoko.AniSync
                 options.IdleTimeout = TimeSpan.FromDays(30); // Session persists for 30 days
                 options.Cookie.HttpOnly = true;
                 options.Cookie.IsEssential = true;
-                options.Cookie.Name = ".Shoko.MAL.Session";
+                options.Cookie.Name = ".Shoko.AniSync.Session";
             });
             
             // Note: Shoko's internal services like IUserDataService should be automatically available
@@ -35,7 +35,7 @@ namespace Shoko.AniSync
             
             mvcBuilder.AddApplicationPart(assembly);
 
-            services.AddHostedService<ShokoMalPlugin>();
+            services.AddHostedService<ShokoAniSyncPlugin>();
         }
     }
 }

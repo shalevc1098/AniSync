@@ -7,6 +7,8 @@ using Shoko.AniSync.Api;
 using Shoko.AniSync.Configuration;
 using Shoko.AniSync.Interfaces;
 using Shoko.AniSync.Models.ViewModels;
+using Shoko.AniSync.Models.Mal;
+using Shoko.MAL.Models;
 using Shoko.Plugin.Abstractions;
 using Shoko.Plugin.Abstractions.Services;
 using System;
@@ -844,42 +846,42 @@ namespace Shoko.AniSync.Controllers
         private List<SyncHistoryEntry> GetSyncHistory()
         {
             // Get real sync history from SyncHistoryManager
-            if (ShokoMalPlugin.SyncHistory == null)
+            if (ShokoAniSyncPlugin.SyncHistory == null)
             {
                 // Return empty list if sync history is not initialized
                 return new List<SyncHistoryEntry>();
             }
 
-            // Get the current Shoko user from session
-            string? shokoUsername = null;
-            try
+            // Get the current Shoko user
+            var shokoUsername = GetCurrentShokoUser();
+            if (string.IsNullOrEmpty(shokoUsername))
             {
-                shokoUsername = HttpContext?.Session?.GetString("Username");
-            }
-            catch (InvalidOperationException)
-            {
-                // Session is not configured, username will be null
-                _logger.LogDebug("Session is not configured, getting history for all users");
+                _logger.LogDebug("No user found, returning empty history");
+                return new List<SyncHistoryEntry>();
             }
             
-            // Get history asynchronously - for now we'll use GetResult() but this should be refactored to async
-            var historyTask = ShokoMalPlugin.SyncHistory.GetHistoryAsync(limit: 100, shokoUsername: shokoUsername);
-            var realHistory = historyTask.GetAwaiter().GetResult();
+            // Get user history in new format
+            var userHistory = ShokoAniSyncPlugin.SyncHistory.GetUserStatsAsync(shokoUsername).GetAwaiter().GetResult();
+            if (userHistory == null)
+            {
+                return new List<SyncHistoryEntry>();
+            }
             
-            // Convert from our model to the view model
+            // Convert from new format to view model
             var viewModelHistory = new List<SyncHistoryEntry>();
-            foreach (var entry in realHistory)
+            foreach (var entry in userHistory.History.Take(100))
             {
+                var syncAction = (SyncAction)entry.Action;
                 viewModelHistory.Add(new SyncHistoryEntry
                 {
                     Timestamp = entry.Timestamp,
-                    AnimeName = entry.AnimeName ?? "Unknown",
+                    AnimeName = entry.AnimeTitle ?? "Unknown",
                     AnimeId = entry.AnimeId,
-                    Episode = entry.EpisodeNumber,
-                    Action = entry.Action?.ToLower() ?? "unknown",
+                    Episode = entry.EpisodeNumber ?? 0,
+                    Action = SyncActionHelper.GetActionText(syncAction).ToLower(),
                     Success = entry.Success,
-                    Details = entry.Details ?? entry.ErrorMessage ?? "No details available",
-                    ErrorMessage = entry.ErrorMessage
+                    Details = SyncActionHelper.GetDetailsText(syncAction) ?? "No details available",
+                    ErrorMessage = entry.Success ? null : "Sync failed"
                 });
             }
             
@@ -895,7 +897,7 @@ namespace Shoko.AniSync.Controllers
         {
             try
             {
-                if (ShokoMalPlugin.SyncHistory == null)
+                if (ShokoAniSyncPlugin.SyncHistory == null)
                 {
                     return Json(new { error = "Sync history not available" });
                 }
@@ -919,7 +921,7 @@ namespace Shoko.AniSync.Controllers
                     });
                 }
 
-                var userHistory = await ShokoMalPlugin.SyncHistory.GetUserStatsAsync(username);
+                var userHistory = await ShokoAniSyncPlugin.SyncHistory.GetUserStatsAsync(username);
                 if (userHistory == null)
                 {
                     return Json(new { 
@@ -934,8 +936,32 @@ namespace Shoko.AniSync.Controllers
                     ? userHistory.History.Take(limit.Value).ToList()
                     : userHistory.History;
 
+                // Transform history entries to include generated messages
+                var transformedEntries = historyEntries.Select((entry, index) => {
+                    var syncAction = (SyncAction)entry.Action;
+                    // Check if this is the first occurrence of this anime (for "first time" detection)
+                    var isFirstTime = index == historyEntries.Count - 1 || 
+                        !historyEntries.Skip(index + 1).Any(h => h.AnimeId == entry.AnimeId);
+                    
+                    return new {
+                        timestamp = entry.Timestamp,
+                        action = SyncActionHelper.GetActionText(syncAction),
+                        anime_id = entry.AnimeId,
+                        anime_title = entry.AnimeTitle,
+                        anime_image = entry.AnimeImage,
+                        episode_number = entry.EpisodeNumber,
+                        status = SyncActionHelper.GetStatusString((Status)entry.Status),
+                        success = entry.Success,
+                        message = entry.Success ? 
+                            SyncActionHelper.GetSuccessMessage(syncAction) : 
+                            "Sync failed",
+                        details = SyncActionHelper.GetDetailsText(syncAction, isFirstTime),
+                        provider = entry.Provider
+                    };
+                }).ToList();
+
                 var response = new {
-                    history = historyEntries,
+                    history = transformedEntries,
                     total_syncs = userHistory.TotalSyncs,
                     failed_syncs = userHistory.FailedSyncs,
                     last_sync = userHistory.LastSync
@@ -966,12 +992,12 @@ namespace Shoko.AniSync.Controllers
         {
             try
             {
-                if (ShokoMalPlugin.SyncHistory == null)
+                if (ShokoAniSyncPlugin.SyncHistory == null)
                 {
                     return Json(new { error = "Sync history not available" });
                 }
 
-                var stats = await ShokoMalPlugin.SyncHistory.GetStatsAsync();
+                var stats = await ShokoAniSyncPlugin.SyncHistory.GetStatsAsync();
                 return Json(new {
                     total_syncs = stats.TotalSyncs,
                     successful_syncs = stats.SuccessfulSyncs,
@@ -998,7 +1024,7 @@ namespace Shoko.AniSync.Controllers
         {
             try
             {
-                if (ShokoMalPlugin.SyncHistory == null)
+                if (ShokoAniSyncPlugin.SyncHistory == null)
                 {
                     return Json(new { error = "Sync history not available" });
                 }
@@ -1008,7 +1034,7 @@ namespace Shoko.AniSync.Controllers
                     return BadRequest(new { error = "Username is required" });
                 }
 
-                await ShokoMalPlugin.SyncHistory.ClearHistoryAsync(username);
+                await ShokoAniSyncPlugin.SyncHistory.ClearHistoryAsync(username);
                 return Json(new { success = true, message = $"History cleared for user {username}" });
             }
             catch (Exception ex)
@@ -1044,18 +1070,18 @@ namespace Shoko.AniSync.Controllers
             string lastSync = "Never";
             string pending = "0";
             
-            if (isAuthenticated && ShokoMalPlugin.SyncHistory != null)
+            if (isAuthenticated && ShokoAniSyncPlugin.SyncHistory != null)
             {
                 try
                 {
                     // Get sync history stats for this Shoko user
-                    var userHistory = ShokoMalPlugin.SyncHistory.GetUserStatsAsync(shokoUsername).Result;
+                    var userHistory = ShokoAniSyncPlugin.SyncHistory.GetUserStatsAsync(shokoUsername).Result;
                     if (userHistory != null)
                     {
                         // Get unique anime count from history
                         var uniqueAnimeIds = userHistory.History
                             .Where(h => h.AnimeId.HasValue)
-                            .Select(h => h.AnimeId.Value)
+                            .Select(h => h.AnimeId!.Value)
                             .Distinct()
                             .Count();
                         

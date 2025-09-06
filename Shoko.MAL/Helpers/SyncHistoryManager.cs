@@ -7,6 +7,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Shoko.AniSync.Models;
+using Shoko.AniSync.Models.Mal;
+using Shoko.MAL.Models;
 
 namespace Shoko.AniSync.Helpers
 {
@@ -52,50 +54,6 @@ namespace Shoko.AniSync.Helpers
             }
         }
 
-        public async Task AddEntryAsync(SyncHistoryEntry entry)
-        {
-            await _fileLock.WaitAsync();
-            try
-            {
-                var username = entry.ShokoUsername ?? "Unknown";
-                
-                // Ensure user history exists
-                if (!_userHistories.ContainsKey(username))
-                {
-                    _userHistories[username] = new UserHistory();
-                }
-
-                // Convert legacy entry to new format
-                var historyEntry = new HistoryEntry
-                {
-                    Timestamp = entry.Timestamp,
-                    Action = entry.Action,
-                    AnimeId = entry.AnimeId,
-                    AnimeTitle = entry.AnimeName,
-                    AnimeImage = entry.AnimeImage,
-                    EpisodesSynced = entry.EpisodeNumber,
-                    Status = DetermineStatus(entry.Action, entry.EpisodeNumber, entry.TotalEpisodes),
-                    Success = entry.Success,
-                    Message = entry.Success ? 
-                        $"Successfully synced episode {entry.EpisodeNumber}" + (string.IsNullOrEmpty(entry.Details) ? "" : $" - {entry.Details}") :
-                        entry.ErrorMessage ?? "Sync failed",
-                    Details = entry.Details,
-                    Provider = new ProviderInfo 
-                    { 
-                        Name = entry.Provider,
-                        Username = entry.ProviderUsername ?? entry.MalUsername
-                    }
-                };
-
-                _userHistories[username].AddEntry(historyEntry);
-                await SaveHistoryAsync();
-                _logger.LogDebug("Added sync history entry for {AnimeName} (user: {Username})", entry.AnimeName, username);
-            }
-            finally
-            {
-                _fileLock.Release();
-            }
-        }
 
         /// <summary>
         /// Add a new history entry directly (new format)
@@ -121,64 +79,7 @@ namespace Shoko.AniSync.Helpers
             }
         }
 
-        private string DetermineStatus(string action, int episodeNumber, int totalEpisodes)
-        {
-            return action.ToLowerInvariant() switch
-            {
-                "completed" => "completed",
-                "rewatching" => "rewatching",
-                "dropped" => "dropped", 
-                "paused" => "on_hold",
-                "plan to watch" => "plan_to_watch",
-                _ => episodeNumber >= totalEpisodes ? "completed" : "watching"
-            };
-        }
 
-        public async Task<List<SyncHistoryEntry>> GetHistoryAsync(int? limit = null, string? shokoUsername = null)
-        {
-            await _fileLock.WaitAsync();
-            try
-            {
-                var legacyEntries = new List<SyncHistoryEntry>();
-
-                if (string.IsNullOrEmpty(shokoUsername))
-                {
-                    // Return entries for all users
-                    foreach (var kvp in _userHistories)
-                    {
-                        var username = kvp.Key;
-                        var userHistory = kvp.Value;
-                        
-                        foreach (var entry in userHistory.History)
-                        {
-                            legacyEntries.Add(ConvertToLegacyEntry(entry, username));
-                        }
-                    }
-                }
-                else if (_userHistories.ContainsKey(shokoUsername))
-                {
-                    // Return entries for specific user
-                    foreach (var entry in _userHistories[shokoUsername].History)
-                    {
-                        legacyEntries.Add(ConvertToLegacyEntry(entry, shokoUsername));
-                    }
-                }
-
-                // Sort by timestamp (most recent first)
-                legacyEntries = legacyEntries.OrderByDescending(e => e.Timestamp).ToList();
-
-                if (limit.HasValue)
-                {
-                    legacyEntries = legacyEntries.Take(limit.Value).ToList();
-                }
-
-                return legacyEntries;
-            }
-            finally
-            {
-                _fileLock.Release();
-            }
-        }
 
         /// <summary>
         /// Get history in new format for a specific user
@@ -208,26 +109,7 @@ namespace Shoko.AniSync.Helpers
             }
         }
 
-        private SyncHistoryEntry ConvertToLegacyEntry(HistoryEntry entry, string username)
-        {
-            return new SyncHistoryEntry
-            {
-                Id = Guid.NewGuid().ToString(),
-                Timestamp = entry.Timestamp,
-                AnimeName = entry.AnimeTitle,
-                AnimeId = entry.AnimeId,
-                Action = entry.Action,
-                EpisodeNumber = entry.EpisodesSynced,
-                TotalEpisodes = 0, // Not stored in new format
-                Success = entry.Success,
-                ErrorMessage = entry.Success ? null : entry.Message,
-                ShokoUsername = username,
-                MalUsername = username, // Assuming same for now
-                Provider = entry.Provider?.Name ?? "MAL",
-                ProviderUsername = entry.Provider?.Username,
-                Details = entry.Details
-            };
-        }
+
 
         public async Task<SyncHistoryStats> GetStatsAsync(string? shokoUsername = null)
         {
@@ -261,11 +143,12 @@ namespace Shoko.AniSync.Helpers
                         // Group by action
                         foreach (var entry in userHistory.History)
                         {
-                            var action = entry.Action ?? "Unknown";
-                            if (stats.SyncsByAction.ContainsKey(action))
-                                stats.SyncsByAction[action]++;
+                            var syncAction = (SyncAction)entry.Action;
+                            var actionText = SyncActionHelper.GetActionText(syncAction);
+                            if (stats.SyncsByAction.ContainsKey(actionText))
+                                stats.SyncsByAction[actionText]++;
                             else
-                                stats.SyncsByAction[action] = 1;
+                                stats.SyncsByAction[actionText] = 1;
                         }
                     }
                 }
@@ -283,11 +166,12 @@ namespace Shoko.AniSync.Helpers
                     // Group by action
                     foreach (var entry in userHistory.History)
                     {
-                        var action = entry.Action ?? "Unknown";
-                        if (stats.SyncsByAction.ContainsKey(action))
-                            stats.SyncsByAction[action]++;
+                        var syncAction = (SyncAction)entry.Action;
+                        var actionText = SyncActionHelper.GetActionText(syncAction);
+                        if (stats.SyncsByAction.ContainsKey(actionText))
+                            stats.SyncsByAction[actionText]++;
                         else
-                            stats.SyncsByAction[action] = 1;
+                            stats.SyncsByAction[actionText] = 1;
                     }
                 }
 
@@ -356,50 +240,27 @@ namespace Shoko.AniSync.Helpers
             }
         }
 
-        public void LogSync(string animeName, int episodeNumber, int totalEpisodes, string action, 
-            bool success, string shokoUsername, string malUsername, string? errorMessage = null, string? details = null, int? animeId = null, string? animeImage = null)
-        {
-            var entry = new SyncHistoryEntry
-            {
-                AnimeName = animeName,
-                AnimeId = animeId, // Now properly setting the anime ID
-                AnimeImage = animeImage,
-                EpisodeNumber = episodeNumber,
-                TotalEpisodes = totalEpisodes,
-                Action = action,
-                Success = success,
-                ShokoUsername = shokoUsername,
-                MalUsername = malUsername,
-                ProviderUsername = malUsername,
-                ErrorMessage = errorMessage,
-                Details = details
-            };
-
-            // Fire and forget - don't wait for the save
-            Task.Run(async () => await AddEntryAsync(entry));
-        }
-
         /// <summary>
-        /// New simplified LogSync method that directly uses the new format
+        /// LogSync method that uses the new format
         /// </summary>
-        public void LogSyncDirect(string username, int? animeId, string animeTitle, int episodesSynced, 
-            string action, bool success, string? message = null, string? details = null, string? animeImage = null, string? providerUsername = null)
+        public void LogSync(string username, int? animeId, string animeTitle, int episodeNumber, 
+            string action, bool success, Status status, string providerName = "MAL", string? animeImage = null, string? providerUsername = null)
         {
+            var syncAction = SyncActionHelper.ParseAction(action);
+            
             var entry = new HistoryEntry
             {
                 Timestamp = DateTime.Now,
-                Action = action,
+                Action = (int)syncAction,
                 AnimeId = animeId,
                 AnimeTitle = animeTitle,
                 AnimeImage = animeImage,
-                EpisodesSynced = episodesSynced,
-                Status = DetermineStatus(action, episodesSynced, 0), // We don't have total episodes in this context
+                EpisodeNumber = episodeNumber,
+                Status = (int)status,
                 Success = success,
-                Message = message ?? (success ? $"Successfully synced episode {episodesSynced}" : "Sync failed"),
-                Details = details,
                 Provider = new ProviderInfo 
                 { 
-                    Name = "MAL",
+                    Name = providerName,
                     Username = providerUsername
                 }
             };
@@ -407,5 +268,6 @@ namespace Shoko.AniSync.Helpers
             // Fire and forget - don't wait for the save
             Task.Run(async () => await AddEntryAsync(username, entry));
         }
+
     }
 }

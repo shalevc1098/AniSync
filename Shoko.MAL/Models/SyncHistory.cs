@@ -18,29 +18,7 @@ namespace Shoko.AniSync.Models
     }
 
     /// <summary>
-    /// Legacy sync history entry model for backward compatibility
-    /// </summary>
-    public class SyncHistoryEntry
-    {
-        public string Id { get; set; } = Guid.NewGuid().ToString();
-        public DateTime Timestamp { get; set; } = DateTime.Now;
-        public string AnimeName { get; set; } = string.Empty;
-        public int? AnimeId { get; set; }
-        public string Action { get; set; } = string.Empty; // "Watched", "Unwatched", "Completed", "Rewatching", etc.
-        public int EpisodeNumber { get; set; }
-        public int TotalEpisodes { get; set; }
-        public bool Success { get; set; }
-        public string? ErrorMessage { get; set; }
-        public string ShokoUsername { get; set; } = string.Empty;
-        public string MalUsername { get; set; } = string.Empty;
-        public string Provider { get; set; } = "MAL";
-        public string? ProviderUsername { get; set; }
-        public string? Details { get; set; } // Additional details like "Set start date", "Set end date", etc.
-        public string? AnimeImage { get; set; }
-    }
-
-    /// <summary>
-    /// New simplified history entry for per-user storage
+    /// History entry for per-user storage
     /// </summary>
     public class HistoryEntry
     {
@@ -48,7 +26,7 @@ namespace Shoko.AniSync.Models
         public DateTime Timestamp { get; set; } = DateTime.Now;
 
         [JsonPropertyName("action")]
-        public string Action { get; set; } = string.Empty;
+        public int Action { get; set; }  // Stores SyncAction enum as int
 
         [JsonPropertyName("anime_id")]
         public int? AnimeId { get; set; }
@@ -59,20 +37,14 @@ namespace Shoko.AniSync.Models
         [JsonPropertyName("anime_image")]
         public string? AnimeImage { get; set; }
 
-        [JsonPropertyName("episodes_synced")]
-        public int EpisodesSynced { get; set; }
+        [JsonPropertyName("episode_number")]
+        public int? EpisodeNumber { get; set; }
 
         [JsonPropertyName("status")]
-        public string Status { get; set; } = string.Empty;
+        public int Status { get; set; }  // Stores Status enum as int
 
         [JsonPropertyName("success")]
         public bool Success { get; set; }
-
-        [JsonPropertyName("message")]
-        public string Message { get; set; } = string.Empty;
-
-        [JsonPropertyName("details")]
-        public string? Details { get; set; }
 
         [JsonPropertyName("provider")]
         public ProviderInfo Provider { get; set; } = new ProviderInfo();
@@ -123,7 +95,7 @@ namespace Shoko.AniSync.Models
     }
 
     /// <summary>
-    /// Legacy sync history stats model for backward compatibility
+    /// Sync history statistics model
     /// </summary>
     public class SyncHistoryStats
     {

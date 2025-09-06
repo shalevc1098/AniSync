@@ -10,6 +10,7 @@ using Shoko.AniSync.Interfaces;
 using Shoko.Plugin.Abstractions.DataModels.Shoko;
 using Shoko.AniSync.Helpers;
 using Shoko.AniSync.Models.Mal;
+using Shoko.MAL.Models;
 using System.Globalization;
 using System.Linq;
 using Shoko.AniSync.Configuration;
@@ -18,13 +19,13 @@ using Shoko.Plugin.Abstractions.Enums;
 
 namespace Shoko.AniSync
 {
-    public class ShokoMalPlugin : IHostedService
+    public class ShokoAniSyncPlugin : IHostedService
     {
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IMemoryCache _memoryCache;
         private readonly IMetadataService _metadataService;
         private readonly ILoggerFactory _loggerFactory;
-        private readonly ILogger<ShokoMalPlugin> _logger;
+        private readonly ILogger<ShokoAniSyncPlugin> _logger;
         private readonly IUserDataService _userDataService;
         private readonly IApplicationPaths _applicationPaths;
         public static SyncHistoryManager SyncHistory { get; private set; } = null!;
@@ -32,11 +33,11 @@ namespace Shoko.AniSync
         internal IApiCallHelpers ApiCallHelpers = null!;
 
         // Shoko will inject the IMetadataService for you
-        public ShokoMalPlugin(IApplicationPaths applicationPaths, IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory, IMemoryCache memoryCache, IMetadataService metadataService, IUserDataService userDataService)
+        public ShokoAniSyncPlugin(IApplicationPaths applicationPaths, IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory, IMemoryCache memoryCache, IMetadataService metadataService, IUserDataService userDataService)
         {
             _httpClientFactory = httpClientFactory;
             _loggerFactory = loggerFactory;
-            _logger = loggerFactory.CreateLogger<ShokoMalPlugin>();
+            _logger = loggerFactory.CreateLogger<ShokoAniSyncPlugin>();
             _memoryCache = memoryCache;
             _metadataService = metadataService;
             _userDataService = userDataService;
@@ -44,6 +45,55 @@ namespace Shoko.AniSync
             
             // Initialize sync history manager
             SyncHistory = new SyncHistoryManager(Path.Combine(applicationPaths.PluginsPath, "AniSync"), loggerFactory);
+        }
+
+        /// <summary>
+        /// Gets episode thumbnail URL if available, falls back to MAL anime image
+        /// </summary>
+        private string? GetEpisodeThumbnailUrl(IShokoEpisode? episode, Anime? anime)
+        {
+            if (episode?.TmdbEpisodes?.Any() == true)
+            {
+                try
+                {
+                    var tmdbEpisode = episode.TmdbEpisodes.First();
+                    var images = tmdbEpisode.GetImages();
+                    if (images?.Any() == true)
+                    {
+                        var firstImage = images.First();
+                        if (!string.IsNullOrEmpty(firstImage.RemoteURL))
+                        {
+                            return firstImage.RemoteURL;
+                        }
+                    }
+                }
+                catch { }
+            }
+            
+            if (episode?.TmdbMovies?.Any() == true)
+            {
+                try
+                {
+                    var tmdbMovie = episode.TmdbMovies.First();
+                    var images = tmdbMovie.GetImages();
+                    if (images?.Any() == true)
+                    {
+                        var firstImage = images.First();
+                        if (!string.IsNullOrEmpty(firstImage.RemoteURL))
+                        {
+                            return firstImage.RemoteURL;
+                        }
+                    }
+                }
+                catch { }
+            }
+            
+            if (episode != null)
+            {
+                return $"/api/v3/Episode/{episode.AnidbEpisodeID}/Images/Thumbnail";
+            }
+            
+            return anime?.MainPicture?.Medium ?? anime?.MainPicture?.Large;
         }
 
         private bool CompareStrings(string first, string second)
@@ -529,49 +579,48 @@ namespace Shoko.AniSync
                                 _logger.LogInformation("Successfully updated MAL status for {Title}", anime.Title);
                                 
                                 // Log to sync history
-                                string action = "Updated";
+                                SyncAction syncAction = SyncAction.Updated;
                                 string? details = null;
                                 
                                 if (newStatus == Status.Completed)
                                 {
-                                    action = "Completed";
+                                    syncAction = SyncAction.Completed;
                                     if (endDate.HasValue && endDate.Value != DateTime.MinValue)
                                         details = "Set end date";
                                 }
                                 else if (setRewatching == true)
                                 {
-                                    action = "Rewatching";
+                                    syncAction = SyncAction.Rewatching;
                                     details = "Started rewatch";
                                 }
                                 else if (newEpisodeCount == 0)
                                 {
-                                    action = "Unwatched";
-                                    details = "Cleared all progress";
+                                    syncAction = SyncAction.Unwatched;
+                                    details = null;  // No need for redundant details
                                 }
                                 else if (newEpisodeCount < malEpisodeCount)
                                 {
-                                    action = "Rolled back";
+                                    syncAction = SyncAction.RolledBack;
                                     details = $"From episode {malEpisodeCount} to {newEpisodeCount}";
                                 }
                                 else
                                 {
-                                    action = "Watched";
+                                    syncAction = SyncAction.Watched;
                                     if (startDate.HasValue && startDate.Value != DateTime.MinValue)
                                         details = "Set start date";
                                 }
                                 
                                 SyncHistory?.LogSync(
-                                    anime.Title ?? "Unknown",
-                                    newEpisodeCount,
-                                    anime.NumEpisodes,
-                                    action,
-                                    true,
                                     shokoUser?.Username ?? "Unknown User",
-                                    userAuth?.Username ?? "Unknown MAL User",
-                                    null,
-                                    details ?? "",
                                     anime.Id,
-                                    anime.MainPicture?.Medium ?? anime.MainPicture?.Large
+                                    anime.Title ?? "Unknown",
+                                    shokoEpisodeNumber,  // Use actual episode number
+                                    SyncActionHelper.GetActionText(syncAction),
+                                    true,
+                                    statusToUse,  // Pass the actual MAL status
+                                    Plugin.Instance.Config.SelectedProvider.ToString(),  // Provider name from config
+                                    GetEpisodeThumbnailUrl(maxEpisode, anime),
+                                    userAuth?.Username ?? "Unknown MAL User"
                                 );
                             }
                             else
@@ -579,19 +628,8 @@ namespace Shoko.AniSync
                                 _logger.LogError("Failed to update MAL status for {Title}", anime.Title);
                                 
                                 // Log failure to sync history
-                                SyncHistory?.LogSync(
-                                    anime.Title ?? "Unknown",
-                                    newEpisodeCount,
-                                    anime.NumEpisodes,
-                                    isWatched ? "Watched" : "Unwatched",
-                                    false,
-                                    shokoUser?.Username ?? "Unknown User",
-                                    userAuth?.Username ?? "Unknown MAL User",
-                                    "Failed to update MAL",
-                                    null,
-                                    anime.Id,
-                                    anime.MainPicture?.Medium ?? anime.MainPicture?.Large
-                                );
+                                // On failure, we don't log to history since sync didn't succeed
+                                // The MAL status remains unchanged
                             }
                         }
                     }
@@ -636,23 +674,22 @@ namespace Shoko.AniSync
                                 _logger.LogInformation("Successfully added {Title} to MAL list", anime.Title);
                                 
                                 // Log to sync history
-                                string action = newStatus == Status.Completed ? "Completed" : "Added to list";
-                                string details = newStatus == Status.Completed 
-                                    ? "Added as completed with start and end dates" 
-                                    : "Added to watching list with start date";
+                                SyncAction syncAction = newStatus == Status.Completed ? SyncAction.Completed : SyncAction.AddedToList;
+                                string? details = newStatus == Status.Completed 
+                                    ? "First time completion" 
+                                    : null;
                                 
                                 SyncHistory?.LogSync(
+                                    shokoUser?.Username ?? "Unknown User",
+                                    anime.Id,
                                     anime.Title ?? "Unknown",
                                     shokoEpisodeNumber,
-                                    anime.NumEpisodes,
-                                    action,
+                                    SyncActionHelper.GetActionText(syncAction),
                                     true,
-                                    shokoUser?.Username ?? "Unknown User",
-                                    userAuth?.Username ?? "Unknown MAL User",
-                                    null,
-                                    details ?? "",
-                                    anime.Id,
-                                    anime.MainPicture?.Medium ?? anime.MainPicture?.Large
+                                    newStatus,  // Pass the actual MAL status for new anime
+                                    Plugin.Instance.Config.SelectedProvider.ToString(),  // Provider name from config
+                                    GetEpisodeThumbnailUrl(maxEpisode, anime),
+                                    userAuth?.Username ?? "Unknown MAL User"
                                 );
                             }
                             else
@@ -660,19 +697,8 @@ namespace Shoko.AniSync
                                 _logger.LogError("Failed to add {Title} to MAL list", anime.Title);
                                 
                                 // Log failure to sync history
-                                SyncHistory?.LogSync(
-                                    anime.Title ?? "Unknown",
-                                    shokoEpisodeNumber,
-                                    anime.NumEpisodes,
-                                    "Add to list",
-                                    false,
-                                    shokoUser?.Username ?? "Unknown User",
-                                    userAuth?.Username ?? "Unknown MAL User",
-                                    "Failed to add to MAL",
-                                    null,
-                                    anime.Id,
-                                    anime.MainPicture?.Medium ?? anime.MainPicture?.Large
-                                );
+                                // On failure, we don't log to history since sync didn't succeed
+                                // The anime was not added to MAL
                             }
                         }
                         else
