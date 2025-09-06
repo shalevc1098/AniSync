@@ -31,26 +31,32 @@ namespace Shoko.AniSync.Configuration
         /// Username of the authenticated user.
         /// </summary>
         [JsonProperty("username")]
-        public string Username { get; set; }
+        public string Username { get; set; } = string.Empty;
         
         /// <summary>
         /// Access token of the authenticated instance.
         /// </summary>
         [JsonProperty("access_token")]
-        public string AccessToken { get; set; }
+        public string AccessToken { get; set; } = string.Empty;
         
         /// <summary>
         /// Refresh token of the authenticated instance.
         /// </summary>
         [JsonProperty("refresh_token")]
-        public string RefreshToken { get; set; }
+        public string RefreshToken { get; set; } = string.Empty;
         
         /// <summary>
         /// The Shoko username associated with this MAL account.
         /// Not serialized to JSON since it's the key in the dictionary.
         /// </summary>
         [JsonIgnore]
-        public string ShokoUsername { get; set; }
+        public string ShokoUsername { get; set; } = string.Empty;
+        
+        /// <summary>
+        /// When the access token expires (Unix timestamp)
+        /// </summary>
+        [JsonProperty("expires_at")]
+        public long? ExpiresAt { get; set; }
         
         // Per-user settings (will use global defaults if null)
         

@@ -10,75 +10,85 @@ using System.Threading.Tasks;
 
 namespace Shoko.AniSync.Configuration
 {
-    public class Config
+    // Root config is now just a dictionary of users
+    public class Config : Dictionary<string, UserConfig>
     {
+        [JsonIgnore]
         private readonly string _filePath;
 
-        [JsonProperty("update_nsfw")]
-        public bool UpdateNsfw { get; set; } = false;
-
-        [JsonProperty("selected_provider")]
-        [JsonConverter(typeof(StringEnumConverter))]
+        // Global default provider (for backward compatibility)
+        [JsonIgnore]
         public ApiName SelectedProvider { get; set; } = ApiName.Mal;
-
-        [JsonProperty("auths")]
-        public Dictionary<string, Dictionary<ApiName, UserApiAuth>> Auths { get; set; } = new Dictionary<string, Dictionary<ApiName, UserApiAuth>>();
         
-        
-        // New settings for the web UI
-        [JsonProperty("enable_auto_sync")]
-        public bool EnableAutoSync { get; set; } = true;
-        
-        [JsonProperty("sync_only_completed")]
-        public bool SyncOnlyCompleted { get; set; } = true;
-        
-        [JsonProperty("enable_rewatch_detection")]
-        public bool EnableRewatchDetection { get; set; } = true;
-        
-        [JsonProperty("allow_rollback")]
-        public bool AllowRollback { get; set; } = false;
-        
-        [JsonProperty("title_match_threshold")]
-        public double TitleMatchThreshold { get; set; } = 0.8;
-        
-        [JsonProperty("use_fuzzy_matching")]
-        public bool UseFuzzyMatching { get; set; } = true;
-        
-        [JsonProperty("sync_delay_seconds")]
-        public int SyncDelaySeconds { get; set; } = 5;
-        
-        [JsonProperty("enable_debug_logging")]
-        public bool EnableDebugLogging { get; set; } = false;
-        
-        
-        // Get all authenticated users across all Shoko users
+        // Get all authenticated users from the new config structure  
         public List<UserApiAuth> GetAuthenticatedUsers()
         {
             var allAuths = new List<UserApiAuth>();
-            if (Auths != null)
+            
+            foreach (var kvp in this)
             {
-                foreach (var userAuths in Auths.Values)
+                var username = kvp.Key;
+                var userConfig = kvp.Value;
+                
+                if (userConfig?.Providers != null)
                 {
-                    allAuths.AddRange(userAuths.Values);
+                    foreach (var provider in userConfig.Providers)
+                    {
+                        allAuths.Add(new UserApiAuth
+                        {
+                            Username = provider.Value.Username,
+                            AccessToken = provider.Value.AccessToken,
+                            RefreshToken = provider.Value.RefreshToken,
+                            ExpiresAt = provider.Value.ExpiresAt,
+                            ShokoUsername = username
+                        });
+                    }
                 }
             }
+            
             return allAuths;
         }
-        
-        // Get auth for a specific Shoko user and provider
-        public UserApiAuth GetAuthForShokoUser(string shokoUsername, ApiName? provider = null)
+
+        // Get user config object for a specific user
+        private UserConfig? GetUserConfig(string username)
         {
-            if (string.IsNullOrEmpty(shokoUsername) || Auths == null) return null;
-            
-            var providerToUse = provider ?? SelectedProvider;
-            
-            if (Auths.TryGetValue(shokoUsername, out var userAuths) && userAuths != null)
+            if (this.TryGetValue(username, out var userConfig))
             {
-                if (userAuths.TryGetValue(providerToUse, out var auth))
+                return userConfig;
+            }
+            return null;
+        }
+
+        // Set user config object for a specific user
+        private void SetUserConfig(string username, UserConfig config)
+        {
+            this[username] = config;
+        }
+
+        // Get auth for a specific Shoko user and provider
+        public UserApiAuth? GetAuthForShokoUser(string shokoUsername, ApiName? provider = null)
+        {
+            if (string.IsNullOrEmpty(shokoUsername)) return null;
+
+            var userConfig = GetUserConfig(shokoUsername);
+            if (userConfig?.Providers != null)
+            {
+                // Use the user's selected provider if no specific provider is requested
+                var providerName = provider?.ToString() ?? userConfig.SelectedProvider ?? "Mal";
+                
+                if (userConfig.Providers.TryGetValue(providerName, out var providerAuth))
                 {
-                    return auth;
+                    return new UserApiAuth
+                    {
+                        Username = providerAuth.Username,
+                        AccessToken = providerAuth.AccessToken,
+                        RefreshToken = providerAuth.RefreshToken,
+                        ExpiresAt = providerAuth.ExpiresAt,
+                        ShokoUsername = shokoUsername
+                    };
                 }
             }
+            
             return null;
         }
         
@@ -87,41 +97,65 @@ namespace Shoko.AniSync.Configuration
         {
             if (string.IsNullOrEmpty(shokoUsername) || auth == null) return;
             
-            auth.ShokoUsername = shokoUsername;
+            var userConfig = GetUserConfig(shokoUsername) ?? new UserConfig();
             
-            // Initialize dictionary if null
-            if (Auths == null)
-                Auths = new Dictionary<string, Dictionary<ApiName, UserApiAuth>>();
+            if (userConfig.Providers == null)
+                userConfig.Providers = new Dictionary<string, ProviderAuth>();
             
-            // Initialize user's auth dictionary if doesn't exist
-            if (!Auths.ContainsKey(shokoUsername))
-                Auths[shokoUsername] = new Dictionary<ApiName, UserApiAuth>();
+            userConfig.Providers[provider.ToString()] = new ProviderAuth
+            {
+                Username = auth.Username,
+                AccessToken = auth.AccessToken,
+                RefreshToken = auth.RefreshToken,
+                ExpiresAt = auth.ExpiresAt
+            };
             
-            // Set the auth for this provider
-            Auths[shokoUsername][provider] = auth;
+            SetUserConfig(shokoUsername, userConfig);
+            Save();
+        }
+        
+        // Set user settings for a Shoko user
+        public void SetUserSettings(string shokoUsername, UserSettings settings)
+        {
+            if (string.IsNullOrEmpty(shokoUsername)) return;
             
+            var userConfig = GetUserConfig(shokoUsername) ?? new UserConfig();
+            userConfig.Settings = settings ?? new UserSettings();
+            
+            SetUserConfig(shokoUsername, userConfig);
             Save();
         }
         
 
-        public Config(string filePath)
+        public Config(string filePath) : base()
         {
             _filePath = filePath;
             EnsureDirectoryExists();
 
-            if (!File.Exists(_filePath))
-            {
-                Save();
-            } else
+            if (File.Exists(_filePath))
             {
                 var json = File.ReadAllText(_filePath);
-                JsonConvert.PopulateObject(json, this);
+                var data = JsonConvert.DeserializeObject<Dictionary<string, UserConfig>>(json);
+                if (data != null)
+                {
+                    foreach (var kvp in data)
+                    {
+                        this[kvp.Key] = kvp.Value;
+                    }
+                }
+            }
+            else
+            {
+                // Create empty config file
+                Save();
             }
         }
 
         public void Save()
         {
-            var json = JsonConvert.SerializeObject(this, Formatting.Indented);
+            // Create a clean dictionary for serialization (without the _filePath)
+            var dataToSave = new Dictionary<string, UserConfig>(this);
+            var json = JsonConvert.SerializeObject(dataToSave, Formatting.Indented);
             File.WriteAllText(_filePath, json);
         }
 
@@ -141,60 +175,66 @@ namespace Shoko.AniSync.Configuration
             return new Config(configPath);
         }
         
-        // Helper methods to get user-specific settings with fallback to global defaults
+        // Helper methods to get user-specific settings
         
         public bool GetUpdateNsfw(string shokoUsername)
         {
-            var userAuth = GetAuthForShokoUser(shokoUsername);
-            return userAuth?.UpdateNsfw ?? UpdateNsfw;
+            var userConfig = GetUserConfig(shokoUsername);
+            return userConfig?.Settings?.UpdateNsfw ?? false;
         }
         
         public bool GetEnableAutoSync(string shokoUsername)
         {
-            var userAuth = GetAuthForShokoUser(shokoUsername);
-            return userAuth?.EnableAutoSync ?? EnableAutoSync;
+            var userConfig = GetUserConfig(shokoUsername);
+            return userConfig?.Settings?.EnableAutoSync ?? true;
         }
         
         public bool GetSyncOnlyCompleted(string shokoUsername)
         {
-            var userAuth = GetAuthForShokoUser(shokoUsername);
-            return userAuth?.SyncOnlyCompleted ?? SyncOnlyCompleted;
+            var userConfig = GetUserConfig(shokoUsername);
+            return userConfig?.Settings?.SyncOnlyCompleted ?? true;
         }
         
         public bool GetEnableRewatchDetection(string shokoUsername)
         {
-            var userAuth = GetAuthForShokoUser(shokoUsername);
-            return userAuth?.EnableRewatchDetection ?? EnableRewatchDetection;
+            var userConfig = GetUserConfig(shokoUsername);
+            return userConfig?.Settings?.EnableRewatchDetection ?? true;
         }
         
         public bool GetAllowRollback(string shokoUsername)
         {
-            var userAuth = GetAuthForShokoUser(shokoUsername);
-            return userAuth?.AllowRollback ?? AllowRollback;
+            var userConfig = GetUserConfig(shokoUsername);
+            return userConfig?.Settings?.AllowRollback ?? false;
         }
         
         public double GetTitleMatchThreshold(string shokoUsername)
         {
-            var userAuth = GetAuthForShokoUser(shokoUsername);
-            return userAuth?.TitleMatchThreshold ?? TitleMatchThreshold;
+            var userConfig = GetUserConfig(shokoUsername);
+            return userConfig?.Settings?.TitleMatchThreshold ?? 0.8;
         }
         
         public bool GetUseFuzzyMatching(string shokoUsername)
         {
-            var userAuth = GetAuthForShokoUser(shokoUsername);
-            return userAuth?.UseFuzzyMatching ?? UseFuzzyMatching;
+            var userConfig = GetUserConfig(shokoUsername);
+            return userConfig?.Settings?.UseFuzzyMatching ?? true;
         }
         
         public int GetSyncDelaySeconds(string shokoUsername)
         {
-            var userAuth = GetAuthForShokoUser(shokoUsername);
-            return userAuth?.SyncDelaySeconds ?? SyncDelaySeconds;
+            var userConfig = GetUserConfig(shokoUsername);
+            return userConfig?.Settings?.SyncDelaySeconds ?? 5;
         }
         
         public bool GetEnableDebugLogging(string shokoUsername)
         {
-            var userAuth = GetAuthForShokoUser(shokoUsername);
-            return userAuth?.EnableDebugLogging ?? EnableDebugLogging;
+            var userConfig = GetUserConfig(shokoUsername);
+            return userConfig?.Settings?.EnableDebugLogging ?? false;
+        }
+        
+        public bool GetSyncStartDateOnlyFromEpisodeOne(string shokoUsername)
+        {
+            var userConfig = GetUserConfig(shokoUsername);
+            return userConfig?.Settings?.SyncStartDateOnlyFromEpisodeOne ?? false;
         }
     }
 }
