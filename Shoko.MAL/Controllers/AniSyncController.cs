@@ -77,23 +77,6 @@ namespace Shoko.AniSync.Controllers
                     }
                 }
                 
-                // Try to get from session as fallback
-                if (string.IsNullOrEmpty(shokoUsername))
-                {
-                    try
-                    {
-                        shokoUsername = HttpContext.Session?.GetString("PendingAuthUser");
-                        if (!string.IsNullOrEmpty(shokoUsername))
-                        {
-                            _logger.LogDebug("Retrieved pending auth user from session: {Username}", shokoUsername);
-                            HttpContext.Session?.Remove("PendingAuthUser");
-                        }
-                    }
-                    catch (InvalidOperationException)
-                    {
-                        _logger.LogDebug("Session not configured");
-                    }
-                }
                 
                 // Last resort - try current context
                 if (string.IsNullOrEmpty(shokoUsername))
@@ -104,21 +87,11 @@ namespace Shoko.AniSync.Controllers
                 if (string.IsNullOrEmpty(shokoUsername))
                 {
                     _logger.LogError("Cannot authenticate MAL without a valid Shoko user. State: {State}", state ?? "null");
-                    return Redirect("/anisync/login?error=No+authenticated+user+found");
+                    return Redirect("/anisync?error=No+authenticated+user+found");
                 }
                 
                 _logger.LogInformation("Authenticating MAL for Shoko user: {ShokoUsername}", shokoUsername);
                 new ApiAuthentication(provider, _httpClientFactory, _loggerFactory, _memoryCache).GetToken(code, shokoUsername: shokoUsername);
-                
-                // Store the authenticated user in session so we remember who authenticated
-                try
-                {
-                    HttpContext.Session?.SetString("AuthenticatedShokoUser", shokoUsername);
-                }
-                catch (InvalidOperationException ex)
-                {
-                    _logger.LogWarning(ex, "Session is not configured, cannot persist authenticated user");
-                }
                 
                 return Redirect("/anisync?success=connected");
             }
@@ -126,19 +99,56 @@ namespace Shoko.AniSync.Controllers
             {
                 // this is the exception you throw when you get a non‐200 back
                 _logger.LogError(authEx, "Failed to retrieve MAL token: {Message}", authEx.Message);
-                return Redirect("/anisync/login?error=" + Uri.EscapeDataString(authEx.Message));
+                return Redirect("/anisync?error=" + Uri.EscapeDataString(authEx.Message));
             }
             catch (HttpRequestException httpEx)
             {
                 // HTTP errors (DNS, timeout, 5xx, etc)
                 _logger.LogError(httpEx, "HTTP request to MAL failed");
-                return Redirect("/anisync/login?error=Failed+to+connect+to+MyAnimeList");
+                return Redirect("/anisync?error=Failed+to+connect+to+MyAnimeList");
             }
             catch (Exception ex)
             {
                 // anything else
                 _logger.LogError(ex, "Unexpected error in auth callback");
-                return Redirect("/anisync/login?error=An+unexpected+error+occurred");
+                return Redirect("/anisync?error=An+unexpected+error+occurred");
+            }
+        }
+        
+        // Proxy to Shoko's User/Current API endpoint
+        [HttpGet]
+        [Route("api/v3/User/Current")]
+        public async Task<IActionResult> GetCurrentUser()
+        {
+            try
+            {
+                var apiKey = Request.Headers["apikey"].FirstOrDefault();
+                
+                if (string.IsNullOrEmpty(apiKey))
+                {
+                    return Unauthorized(new { error = "No API key provided" });
+                }
+                
+                // Create HTTP client to call Shoko's actual API
+                var httpClient = _httpClientFactory.CreateClient();
+                httpClient.DefaultRequestHeaders.Add("apikey", apiKey);
+                
+                // Call Shoko's internal User/Current endpoint
+                // Since we're running as a plugin, we need to use localhost
+                var response = await httpClient.GetAsync("http://localhost:8111/api/v3/User/Current");
+                
+                if (!response.IsSuccessStatusCode)
+                {
+                    return StatusCode((int)response.StatusCode, new { error = "Authentication failed" });
+                }
+                
+                var content = await response.Content.ReadAsStringAsync();
+                return Content(content, "application/json");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to get current user");
+                return StatusCode(500, new { error = "Failed to get current user" });
             }
         }
         
@@ -147,17 +157,30 @@ namespace Shoko.AniSync.Controllers
         [Route("")]
         public IActionResult Index()
         {
-            var config = Config.GetConfig(_applicationPaths);
             
-            // Get current Shoko user
+            // Get Shoko username from query or API
             var shokoUsername = GetCurrentShokoUser();
             
-            // If no current user found, check if we have any authenticated users in config
-            if (string.IsNullOrEmpty(shokoUsername) && config?.Auths?.Any() == true)
+            var config = Config.GetConfig(_applicationPaths);
+            
+            // If we got null, try to use first user from config
+            if (string.IsNullOrEmpty(shokoUsername) && config?.Any() == true)
             {
-                // Use the first authenticated user as fallback
-                shokoUsername = config.Auths.Keys.FirstOrDefault();
+                shokoUsername = config.Keys.FirstOrDefault();
                 _logger.LogInformation("Using authenticated user from config: {Username}", shokoUsername);
+            }
+            
+            // Auto-populate user config if user exists but not in config
+            if (!string.IsNullOrEmpty(shokoUsername) && config != null && !config.ContainsKey(shokoUsername))
+            {
+                _logger.LogInformation("Auto-creating config entry for user: {Username}", shokoUsername);
+                config[shokoUsername] = new UserConfig
+                {
+                    Providers = new Dictionary<string, ProviderAuth>(),
+                    Settings = UserSettings.CreateWithDefaults(),
+                    SelectedProvider = "Mal"
+                };
+                config.Save();
             }
             
             if (string.IsNullOrEmpty(shokoUsername))
@@ -180,43 +203,53 @@ namespace Shoko.AniSync.Controllers
             return Content(html, "text/html");
         }
         
-        // Login page
-        [HttpGet]
-        [Route("login")]
-        public IActionResult Login()
-        {
-            // Get current user
-            var currentUser = GetCurrentShokoUser();
-            
-            // If no current user found
-            if (string.IsNullOrEmpty(currentUser) || currentUser == "None")
-            {
-                var errorHtml = GetLoginErrorHtml("No Shoko user detected. Please ensure you're logged into Shoko.");
-                return Content(errorHtml, "text/html");
-            }
-            
-            var html = GetLoginHtml(currentUser);
-            return Content(html, "text/html");
-        }
         
         // Settings page
         [HttpGet]
         [Route("Settings")]
         public IActionResult Settings()
         {
+            _logger.LogInformation("Settings GET request received from IP: {RemoteIpAddress}", 
+                Request.HttpContext.Connection.RemoteIpAddress);
+            _logger.LogInformation("User-Agent: {UserAgent}", Request.Headers["User-Agent"].ToString());
+            _logger.LogInformation("Has apikey header: {HasApiKey}", Request.Headers.ContainsKey("apikey"));
+            
+            // Get Shoko username from query or API
+            var shokoUsername = GetCurrentShokoUser();
+            
             var config = Config.GetConfig(_applicationPaths);
             
-            // Get current Shoko user
-            var shokoUsername = GetCurrentShokoUser();
+            // If we got null, try to use first user from config
+            if (string.IsNullOrEmpty(shokoUsername) && config?.Any() == true)
+            {
+                shokoUsername = config.Keys.FirstOrDefault();
+                _logger.LogInformation("Using authenticated user from config: {Username}", shokoUsername);
+            }
+            
+            // Auto-populate user config if user exists but not in config
+            if (!string.IsNullOrEmpty(shokoUsername) && config != null && !config.ContainsKey(shokoUsername))
+            {
+                _logger.LogInformation("Auto-creating config entry for user: {Username}", shokoUsername);
+                config[shokoUsername] = new UserConfig
+                {
+                    Providers = new Dictionary<string, ProviderAuth>(),
+                    Settings = UserSettings.CreateWithDefaults(),
+                    SelectedProvider = "Mal"
+                };
+                config.Save();
+            }
+            
+            // If we still got null, it means there's no apikey header - show settings auth page
             if (string.IsNullOrEmpty(shokoUsername))
             {
-                _logger.LogWarning("No authenticated user found in HTTP context");
-                shokoUsername = "None";
+                _logger.LogInformation("No apikey header found, returning settings authentication page");
+                var settingsAuthHtml = GetSettingsAuthHtml();
+                return Content(settingsAuthHtml, "text/html");
             }
             
             // Get MAL auth for current Shoko user
             UserApiAuth userAuth = null;
-            if (!string.IsNullOrEmpty(shokoUsername) && config != null)
+            if (!string.IsNullOrEmpty(shokoUsername) && shokoUsername != "None" && config != null)
             {
                 userAuth = config.GetAuthForShokoUser(shokoUsername);
             }
@@ -224,64 +257,57 @@ namespace Shoko.AniSync.Controllers
             var isAuthenticated = !string.IsNullOrEmpty(userAuth?.AccessToken);
             var malUsername = userAuth?.Username ?? "Not Connected";
             
+            // For settings page, we show the form even if MAL is not connected yet
+            // The user can configure their sync preferences before connecting to MAL
+            
             var html = GetSettingsHtml(isAuthenticated, malUsername, config, shokoUsername);
             return Content(html, "text/html");
         }
         
         [HttpPost]
         [Route("Settings")]
-        [Consumes("application/x-www-form-urlencoded")]
-        public IActionResult Settings([FromForm] SettingsViewModel model)
+        public IActionResult Settings([FromBody] SettingsViewModel model)
         {
+            _logger.LogInformation("Settings POST received. Content-Type: {ContentType}", Request.ContentType);
+            _logger.LogInformation("Has apikey header: {HasApiKey}", Request.Headers.ContainsKey("apikey"));
+            
+            if (model == null)
+            {
+                _logger.LogError("Settings model is null");
+                return BadRequest("Invalid settings data");
+            }
+            
             var config = Config.GetConfig(_applicationPaths);
+            
+            // Get current Shoko user
             var shokoUsername = GetCurrentShokoUser();
+            
+            _logger.LogInformation("Saving settings for user: {Username}", shokoUsername);
+            _logger.LogInformation("Settings model: UpdateNsfw={UpdateNsfw}, EnableAutoSync={EnableAutoSync}", model.UpdateNsfw, model.EnableAutoSync);
             
             if (!string.IsNullOrEmpty(shokoUsername))
             {
-                // Get or create user auth for this Shoko user
-                var userAuth = config.GetAuthForShokoUser(shokoUsername);
-                if (userAuth != null)
+                // Update the settings for this user
+                config.SetUserSettings(shokoUsername, new UserSettings
                 {
-                    // Update user-specific settings
-                    userAuth.UpdateNsfw = model.UpdateNsfw;
-                    userAuth.EnableAutoSync = model.EnableAutoSync;
-                    userAuth.SyncOnlyCompleted = model.SyncOnlyCompleted;
-                    userAuth.EnableRewatchDetection = model.EnableRewatchDetection;
-                    userAuth.AllowRollback = model.AllowRollback;
-                    userAuth.TitleMatchThreshold = model.TitleMatchThreshold;
-                    userAuth.UseFuzzyMatching = model.UseFuzzyMatching;
-                    userAuth.SyncDelaySeconds = model.SyncDelaySeconds;
-                    userAuth.EnableDebugLogging = model.EnableDebugLogging;
-                }
-                else
-                {
-                    // No auth exists, update global settings
-                    config.UpdateNsfw = model.UpdateNsfw;
-                    config.EnableAutoSync = model.EnableAutoSync;
-                    config.SyncOnlyCompleted = model.SyncOnlyCompleted;
-                    config.EnableRewatchDetection = model.EnableRewatchDetection;
-                    config.AllowRollback = model.AllowRollback;
-                    config.TitleMatchThreshold = model.TitleMatchThreshold;
-                    config.UseFuzzyMatching = model.UseFuzzyMatching;
-                    config.SyncDelaySeconds = model.SyncDelaySeconds;
-                    config.EnableDebugLogging = model.EnableDebugLogging;
-                }
+                    UpdateNsfw = model.UpdateNsfw,
+                    EnableAutoSync = model.EnableAutoSync,
+                    SyncOnlyCompleted = model.SyncOnlyCompleted,
+                    EnableRewatchDetection = model.EnableRewatchDetection,
+                    AllowRollback = model.AllowRollback,
+                    TitleMatchThreshold = model.TitleMatchThreshold,
+                    UseFuzzyMatching = model.UseFuzzyMatching,
+                    SyncDelaySeconds = model.SyncDelaySeconds,
+                    EnableDebugLogging = model.EnableDebugLogging
+                });
+                
+                config.Save();
+                _logger.LogInformation("Settings saved successfully for user: {Username}", shokoUsername);
             }
             else
             {
-                // No user context, update global settings
-                config.UpdateNsfw = model.UpdateNsfw;
-                config.EnableAutoSync = model.EnableAutoSync;
-                config.SyncOnlyCompleted = model.SyncOnlyCompleted;
-                config.EnableRewatchDetection = model.EnableRewatchDetection;
-                config.AllowRollback = model.AllowRollback;
-                config.TitleMatchThreshold = model.TitleMatchThreshold;
-                config.UseFuzzyMatching = model.UseFuzzyMatching;
-                config.SyncDelaySeconds = model.SyncDelaySeconds;
-                config.EnableDebugLogging = model.EnableDebugLogging;
+                _logger.LogWarning("Could not save settings - invalid username: {Username}", shokoUsername);
             }
-            
-            config.Save();
             
             // TempData["SuccessMessage"] = "Settings saved successfully!";
             return Redirect("/anisync/settings");
@@ -292,13 +318,48 @@ namespace Shoko.AniSync.Controllers
         [Route("History")]
         public IActionResult History()
         {
-            var config = Config.GetConfig(_applicationPaths);
-            var currentUser = GetCurrentShokoUser();
-            var auth = currentUser != null ? config?.GetAuthForShokoUser(currentUser, ApiName.Mal) : null;
-            var isAuthenticated = !string.IsNullOrEmpty(auth?.AccessToken);
-            var username = auth?.Username ?? "Guest";
+            // Get Shoko username from query or API
+            var shokoUsername = GetCurrentShokoUser();
             
-            var html = GetHistoryHtml(isAuthenticated, username);
+            var config = Config.GetConfig(_applicationPaths);
+            
+            // If we got null, try to use first user from config
+            if (string.IsNullOrEmpty(shokoUsername) && config?.Any() == true)
+            {
+                shokoUsername = config.Keys.FirstOrDefault();
+                _logger.LogInformation("Using authenticated user from config: {Username}", shokoUsername);
+            }
+            
+            // Auto-populate user config if user exists but not in config
+            if (!string.IsNullOrEmpty(shokoUsername) && config != null && !config.ContainsKey(shokoUsername))
+            {
+                _logger.LogInformation("Auto-creating config entry for user: {Username}", shokoUsername);
+                config[shokoUsername] = new UserConfig
+                {
+                    Providers = new Dictionary<string, ProviderAuth>(),
+                    Settings = UserSettings.CreateWithDefaults(),
+                    SelectedProvider = "Mal"
+                };
+                config.Save();
+            }
+            
+            if (string.IsNullOrEmpty(shokoUsername))
+            {
+                _logger.LogWarning("No authenticated user found");
+                shokoUsername = "None";
+            }
+            
+            // Get MAL auth for current Shoko user
+            UserApiAuth userAuth = null;
+            if (!string.IsNullOrEmpty(shokoUsername) && shokoUsername != "None" && config != null)
+            {
+                userAuth = config.GetAuthForShokoUser(shokoUsername);
+            }
+            
+            var isAuthenticated = !string.IsNullOrEmpty(userAuth?.AccessToken);
+            var malUsername = userAuth?.Username ?? "Not Connected";
+            
+            var html = GetHistoryHtml(isAuthenticated, malUsername);
             return Content(html, "text/html");
         }
         
@@ -343,22 +404,18 @@ namespace Shoko.AniSync.Controllers
             var config = Config.GetConfig(_applicationPaths);
             var currentUser = GetCurrentShokoUser();
             
-            if (!string.IsNullOrEmpty(currentUser) && config?.Auths != null && config.Auths.ContainsKey(currentUser))
+            if (!string.IsNullOrEmpty(currentUser) && config?.ContainsKey(currentUser) == true)
             {
+                var userConfig = config[currentUser];
                 // Remove the MAL auth for the current user
-                if (config.Auths[currentUser].ContainsKey(ApiName.Mal))
+                if (userConfig?.Providers?.ContainsKey("Mal") == true)
                 {
-                    config.Auths[currentUser].Remove(ApiName.Mal);
-                    if (config.Auths[currentUser].Count == 0)
-                    {
-                        config.Auths.Remove(currentUser);
-                    }
+                    userConfig.Providers.Remove("Mal");
                     config.Save();
                 }
             }
             
-            // Clear session data
-            HttpContext.Session.Remove("AuthenticatedShokoUser");
+            // Session data is not used - authentication is handled via apikey headers
             
             // TempData["SuccessMessage"] = "Logged out successfully";
             return RedirectToAction("Index");
@@ -371,6 +428,7 @@ namespace Shoko.AniSync.Controllers
         {
             try
             {
+                // Get current Shoko user
                 var shokoUsername = GetCurrentShokoUser();
                 if (string.IsNullOrEmpty(shokoUsername))
                 {
@@ -390,6 +448,193 @@ namespace Shoko.AniSync.Controllers
             }
             
             return Redirect("/anisync/settings");
+        }
+        
+        // Comprehensive test endpoint for authentication flow
+        [HttpGet]
+        [Route("test-auth")]
+        public IActionResult TestAuth()
+        {
+            var results = new Dictionary<string, object>();
+            
+            // Test 1: Session functionality
+            try
+            {
+                var sessionUser = HttpContext.Session?.GetString("ShokoUser");
+                var sessionApiKey = HttpContext.Session?.GetString("ShokoApiKey");
+                results["Session"] = new
+                {
+                    HasSession = HttpContext.Session != null,
+                    StoredUser = sessionUser ?? "None",
+                    HasApiKey = !string.IsNullOrEmpty(sessionApiKey)
+                };
+            }
+            catch (Exception ex)
+            {
+                results["Session"] = $"Error: {ex.Message}";
+            }
+            
+            // Test 2: Cookie functionality
+            try
+            {
+                var userCookie = Request.Cookies["shoko-user"];
+                results["Cookies"] = new
+                {
+                    UserCookie = userCookie ?? "None",
+                    AllCookies = Request.Cookies.Keys.ToList()
+                };
+            }
+            catch (Exception ex)
+            {
+                results["Cookies"] = $"Error: {ex.Message}";
+            }
+            
+            // Test 3: GetCurrentShokoUser method
+            try
+            {
+                var currentUser = GetCurrentShokoUser();
+                results["CurrentUser"] = new
+                {
+                    Username = currentUser ?? "None",
+                    Method = !string.IsNullOrEmpty(currentUser) ? "Found" : "Not found"
+                };
+            }
+            catch (Exception ex)
+            {
+                results["CurrentUser"] = $"Error: {ex.Message}";
+            }
+            
+            // Test 4: MAL Authentication status
+            try
+            {
+                var config = Config.GetConfig(_applicationPaths);
+                var currentUser = GetCurrentShokoUser();
+                UserApiAuth malAuth = null;
+                
+                if (!string.IsNullOrEmpty(currentUser) && config != null)
+                {
+                    malAuth = config.GetAuthForShokoUser(currentUser, ApiName.Mal);
+                }
+                
+                results["MALAuth"] = new
+                {
+                    ShokoUser = currentUser ?? "None",
+                    HasMALAuth = malAuth != null,
+                    MALUsername = malAuth?.Username ?? "Not connected",
+                    HasAccessToken = !string.IsNullOrEmpty(malAuth?.AccessToken),
+                    HasRefreshToken = !string.IsNullOrEmpty(malAuth?.RefreshToken),
+                    // Per-user settings
+                    UpdateNsfw = config?.GetUpdateNsfw(currentUser ?? "") ?? false,
+                    EnableAutoSync = config?.GetEnableAutoSync(currentUser ?? "") ?? false,
+                    SyncOnlyCompleted = config?.GetSyncOnlyCompleted(currentUser ?? "") ?? false
+                };
+            }
+            catch (Exception ex)
+            {
+                results["MALAuth"] = $"Error: {ex.Message}";
+            }
+            
+            // Test 5: Available Shoko users
+            try
+            {
+                var users = _userService?.GetUsers();
+                if (users != null)
+                {
+                    var userList = users.Take(10).Select(u => new
+                    {
+                        Username = GetUserProperty(u, "Username")?.ToString() ?? "Unknown",
+                        ID = GetUserProperty(u, "JMMUserID")
+                    }).ToList();
+                    
+                    results["AvailableUsers"] = userList;
+                }
+                else
+                {
+                    results["AvailableUsers"] = "UserService not available";
+                }
+            }
+            catch (Exception ex)
+            {
+                results["AvailableUsers"] = $"Error: {ex.Message}";
+            }
+            
+            // Test 6: OAuth state generation
+            try
+            {
+                var testUser = "TestUser123";
+                var state = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(testUser));
+                var decodedState = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(state));
+                
+                results["OAuthState"] = new
+                {
+                    Original = testUser,
+                    Encoded = state,
+                    Decoded = decodedState,
+                    Success = testUser == decodedState
+                };
+            }
+            catch (Exception ex)
+            {
+                results["OAuthState"] = $"Error: {ex.Message}";
+            }
+            
+            return Json(results);
+        }
+        
+        // Test endpoint to simulate user switching
+        [HttpGet]
+        [Route("test-switch-user")]
+        public IActionResult TestSwitchUser(string username)
+        {
+            if (string.IsNullOrEmpty(username))
+            {
+                return BadRequest("Username is required");
+            }
+            
+            // Simulate storing the user in session (as if they logged in)
+            HttpContext.Session?.SetString("ShokoUser", username);
+            HttpContext.Session?.SetString("ShokoApiKey", "test-api-key");
+            
+            // Also set the cookie
+            Response.Cookies.Append("shoko-user", username, new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = Request.IsHttps,
+                SameSite = SameSiteMode.Lax,
+                Expires = DateTimeOffset.UtcNow.AddDays(30)
+            });
+            
+            return Json(new
+            {
+                Success = true,
+                Message = $"Switched to user: {username}",
+                CurrentUser = GetCurrentShokoUser(),
+                SessionUser = HttpContext.Session?.GetString("ShokoUser"),
+                CookieUser = Request.Cookies["shoko-user"]
+            });
+        }
+        
+        // Test endpoint to clear authentication
+        [HttpGet]
+        [Route("test-clear-auth")]
+        public IActionResult TestClearAuth()
+        {
+            // Clear session
+            HttpContext.Session?.Remove("ShokoUser");
+            HttpContext.Session?.Remove("ShokoApiKey");
+            HttpContext.Session?.Remove("PendingAuthUser");
+            
+            // Clear cookies
+            Response.Cookies.Delete("shoko-user");
+            
+            return Json(new
+            {
+                Success = true,
+                Message = "Authentication cleared",
+                CurrentUser = GetCurrentShokoUser(),
+                SessionUser = HttpContext.Session?.GetString("ShokoUser"),
+                CookieUser = Request.Cookies["shoko-user"]
+            });
         }
         
         // Test endpoint to check if we can access Shoko user services
@@ -499,107 +744,68 @@ namespace Shoko.AniSync.Controllers
         // Removed: Users should not be able to switch Shoko users
         // Authentication is determined by the logged-in HTTP context user
         
-        // Helper methods to access Shoko user services
+        // Helper method to get current Shoko user from query, header, or request
         private string GetCurrentShokoUser()
         {
             try
             {
                 var httpContext = _httpContextAccessor?.HttpContext;
                 
-                // First check if we have a user cached in session
-                try
+                // Try to get API key from header (passed by JavaScript)
+                var apiKey = httpContext?.Request?.Headers["apikey"].FirstOrDefault();
+                if (!string.IsNullOrEmpty(apiKey))
                 {
-                    var sessionUser = httpContext?.Session?.GetString("AuthenticatedShokoUser");
-                    if (!string.IsNullOrEmpty(sessionUser))
-                    {
-                        _logger.LogDebug("Found cached user from session: {Username}", sessionUser);
-                        return sessionUser;
-                    }
-                }
-                catch (InvalidOperationException)
-                {
-                    // Session is not configured, continue to API call
-                    _logger.LogDebug("Session is not configured, fetching from API");
-                }
-                
-                // Get the current user from Shoko API
-                var currentUser = GetCurrentUserFromApi();
-                if (currentUser != null)
-                {
-                    _logger.LogDebug("Found authenticated user from Shoko API: {Username}", currentUser);
-                    // Cache in session for performance if available
+                    // Call Shoko's User/Current API synchronously to get the actual username
+                    var httpClient = _httpClientFactory.CreateClient();
+                    httpClient.DefaultRequestHeaders.Add("apikey", apiKey);
+                    
                     try
                     {
-                        httpContext?.Session?.SetString("AuthenticatedShokoUser", currentUser);
+                        var response = httpClient.GetAsync("http://localhost:8111/api/v3/User/Current").GetAwaiter().GetResult();
+                        if (response.IsSuccessStatusCode)
+                        {
+                            var content = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                            // Parse the JSON to get username
+                            var userData = Newtonsoft.Json.JsonConvert.DeserializeObject<dynamic>(content);
+                            if (userData?.Username != null)
+                            {
+                                string username = userData.Username.ToString();
+                                _logger.LogDebug("Got username from API: {Username}", username);
+                                return username;
+                            }
+                        }
                     }
-                    catch (InvalidOperationException)
+                    catch (Exception apiEx)
                     {
-                        // Session not configured, continue without caching
+                        _logger.LogWarning(apiEx, "Failed to call User/Current API");
                     }
-                    return currentUser;
                 }
                 
-                // No authenticated user found
-                _logger.LogDebug("No authenticated user found from Shoko API");
+                // Try to get username from query string as fallback
+                var queryUser = httpContext?.Request?.Query["user"].FirstOrDefault();
+                if (!string.IsNullOrEmpty(queryUser))
+                {
+                    _logger.LogDebug("Using user from query: {Username}", queryUser);
+                    return queryUser;
+                }
+                
+                // Try to get from X-Shoko-User header as fallback
+                var headerUser = httpContext?.Request?.Headers["X-Shoko-User"].FirstOrDefault();
+                if (!string.IsNullOrEmpty(headerUser))
+                {
+                    _logger.LogDebug("Using user from header: {Username}", headerUser);
+                    return headerUser;
+                }
+                
+                // No user found - return null instead of hardcoded Default
+                _logger.LogDebug("No user found, returning null");
+                return null;
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to get current Shoko user");
+                _logger.LogWarning(ex, "Failed to get current Shoko user, returning null");
+                return null;
             }
-            return null;
-        }
-        
-        private string GetCurrentUserFromApi()
-        {
-            try
-            {
-                var httpContext = _httpContextAccessor?.HttpContext;
-                if (httpContext == null)
-                {
-                    _logger.LogDebug("No HTTP context available");
-                    return null;
-                }
-                
-                // Get the API key from the request headers
-                string apiKey = null;
-                if (httpContext.Request.Headers.TryGetValue("apikey", out var apiKeyValues))
-                {
-                    apiKey = apiKeyValues.FirstOrDefault();
-                }
-                
-                if (string.IsNullOrEmpty(apiKey))
-                {
-                    _logger.LogDebug("No API key found in request headers");
-                    return null;
-                }
-                
-                // Call the Shoko API to get the current user
-                using var httpClient = _httpClientFactory.CreateClient();
-                httpClient.DefaultRequestHeaders.Add("apikey", apiKey);
-                
-                // Use the same base URL as the current request
-                var baseUrl = $"{httpContext.Request.Scheme}://{httpContext.Request.Host}";
-                var response = httpClient.GetAsync($"{baseUrl}/api/v3/User/Current").GetAwaiter().GetResult();
-                
-                if (response.IsSuccessStatusCode)
-                {
-                    var json = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-                    var user = System.Text.Json.JsonSerializer.Deserialize<ShokoUser>(json, new System.Text.Json.JsonSerializerOptions
-                    {
-                        PropertyNameCaseInsensitive = true
-                    });
-                    return user?.Username;
-                }
-                else
-                {
-                    _logger.LogDebug("Failed to get current user from API: {StatusCode}", response.StatusCode);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error calling Shoko API for current user");
-            }
-            return null;
         }
         
         private object TryGetUserWatchData(int userID, int videoID)
@@ -711,34 +917,6 @@ namespace Shoko.AniSync.Controllers
             return GetLayout("Dashboard", isAuthenticated, username, content);
         }
         
-        private string GetLoginHtml(string currentUser)
-        {
-            var content = LoadEmbeddedResource("login.html");
-            
-            // Replace the username display
-            content = content.Replace("{CURRENT_USER}", currentUser);
-            
-            return GetLayout("Login", false, currentUser, content);
-        }
-        
-        private string GetLoginErrorHtml(string errorMessage)
-        {
-            var content = $@"<div class='card' style='max-width: 500px; margin: 4rem auto;'>
-                <h1 class='card-title' style='text-align: center;'>⚠️ Authentication Error</h1>
-                <div class='alert alert-danger' style='margin: 2rem 0;'>
-                    {errorMessage}
-                </div>
-                <p style='text-align: center;'>
-                    Please ensure you are logged into Shoko Server and try again.
-                </p>
-                <div style='text-align: center;'>
-                    <a href='/anisync' class='btn btn-secondary'>Go to Dashboard</a>
-                </div>
-            </div>";
-            
-            return GetLayout("Error", false, "Guest", content);
-        }
-        
         private string GetLayout(string title, bool isAuthenticated, string username, string content)
         {
             var layout = LoadEmbeddedResource("layout.html");
@@ -760,8 +938,14 @@ namespace Shoko.AniSync.Controllers
                 // Add option to add new account
                 userOptions.AppendLine("<option value=''>+ Add Account</option>");
                 
+                // Get current Shoko user for navbar display
+                var shokoUsername = GetCurrentShokoUser() ?? "Unknown User";
+                var shokoUsernameInitial = shokoUsername.Length > 0 ? shokoUsername.Substring(0, 1).ToUpper() : "U";
+                
                 navbar = LoadEmbeddedResource("navbar-auth.html")
                     .Replace("{USERNAME}", username)
+                    .Replace("{SHOKO_USERNAME}", shokoUsername)
+                    .Replace("{SHOKO_USERNAME_INITIAL}", shokoUsernameInitial)
                     .Replace("{USER_OPTIONS}", userOptions.ToString());
             }
             else
@@ -779,8 +963,13 @@ namespace Shoko.AniSync.Controllers
         {
             var content = LoadEmbeddedResource("settings.html");
             
+            _logger.LogInformation("GetSettingsHtml called with shokoUsername: {ShokoUsername}", shokoUsername);
+            _logger.LogInformation("Config keys: {ConfigKeys}", config != null ? string.Join(", ", config.Keys) : "null");
+            
             // Get user-specific settings if available
             bool updateNsfw = config?.GetUpdateNsfw(shokoUsername) ?? false;
+            
+            _logger.LogInformation("Retrieved updateNsfw: {UpdateNsfw} for user: {ShokoUsername}", updateNsfw, shokoUsername);
             bool enableAutoSync = config?.GetEnableAutoSync(shokoUsername) ?? true;
             bool syncOnlyCompleted = config?.GetSyncOnlyCompleted(shokoUsername) ?? true;
             bool enableRewatchDetection = config?.GetEnableRewatchDetection(shokoUsername) ?? true;
@@ -790,19 +979,8 @@ namespace Shoko.AniSync.Controllers
             int syncDelaySeconds = config?.GetSyncDelaySeconds(shokoUsername) ?? 5;
             bool enableDebugLogging = config?.GetEnableDebugLogging(shokoUsername) ?? false;
             
-            // Check if user has custom settings
-            var userAuth = config?.GetAuthForShokoUser(shokoUsername);
-            bool hasUserSettings = userAuth != null && (
-                userAuth.UpdateNsfw.HasValue ||
-                userAuth.EnableAutoSync.HasValue ||
-                userAuth.SyncOnlyCompleted.HasValue ||
-                userAuth.EnableRewatchDetection.HasValue ||
-                userAuth.AllowRollback.HasValue ||
-                userAuth.TitleMatchThreshold.HasValue ||
-                userAuth.UseFuzzyMatching.HasValue ||
-                userAuth.SyncDelaySeconds.HasValue ||
-                userAuth.EnableDebugLogging.HasValue
-            );
+            // Check if user has custom settings (from the new config structure) 
+            bool hasUserSettings = config != null && config.ContainsKey(shokoUsername) && config[shokoUsername]?.Settings != null;
             
             // Replace placeholders with actual values
             content = content
@@ -815,13 +993,16 @@ namespace Shoko.AniSync.Controllers
                 .Replace("{USE_FUZZY_MATCHING_CHECKED}", useFuzzyMatching ? "checked" : "")
                 .Replace("{SYNC_DELAY_SECONDS}", syncDelaySeconds.ToString())
                 .Replace("{ENABLE_DEBUG_LOGGING_CHECKED}", enableDebugLogging ? "checked" : "")
-                .Replace("{CONNECTION_STATUS}", isAuthenticated ? "Connected" : "Disconnected")
+                .Replace("{CONNECTION_STATUS}", isAuthenticated ? "Connected" : "Not Connected")
                 .Replace("{CONNECTION_STATUS_CLASS}", isAuthenticated ? "status-connected" : "status-disconnected")
-                .Replace("{USERNAME}", username)
-                .Replace("{LAST_REFRESH}", "Not available")
-                .Replace("{USER_SETTINGS_INFO}", hasUserSettings ? 
-                    "<div class=\"alert alert-info\">Using personalized settings for your account</div>" : 
-                    "<div class=\"alert alert-secondary\">Using global default settings</div>");
+                .Replace("{USERNAME}", isAuthenticated ? username : "Connect to enable syncing")
+                .Replace("{LAST_REFRESH}", isAuthenticated ? "Not available" : "Connect to MAL first")
+                .Replace("{USER_SETTINGS_INFO}", 
+                    isAuthenticated && hasUserSettings ? 
+                        "<div class=\"alert alert-success\"><i class=\"fas fa-check-circle\" style=\"margin-right: 8px;\"></i>Connected to MyAnimeList and using your personalized settings</div>" :
+                    hasUserSettings ?
+                        "<div class=\"alert alert-info\"><i class=\"fas fa-cog\" style=\"margin-right: 8px;\"></i>Settings configured for your account. <a href=\"/anisync\">Connect to MyAnimeList</a> to enable syncing.</div>" :
+                        "<div class=\"alert alert-warning\"><i class=\"fas fa-info-circle\" style=\"margin-right: 8px;\"></i>Configure your sync preferences below. <a href=\"/anisync\">Connect to MyAnimeList</a> to enable syncing.</div>");
             
             return GetLayout("Settings", isAuthenticated, username, content);
         }
@@ -877,6 +1058,203 @@ namespace Shoko.AniSync.Controllers
                 .Replace("{HISTORY_ENTRIES}", entriesHtml.ToString());
             
             return GetLayout("History", isAuthenticated, username, content);
+        }
+        
+        private string GetSettingsAuthHtml()
+        {
+            var content = @"<div class='alert alert-info'>
+    <i class='fas fa-info-circle' style='margin-right: 8px;'></i>Loading settings...
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', async function() {
+    const apiSessionStr = localStorage.getItem('apiSession');
+    
+    if (!apiSessionStr) {
+        document.querySelector('.alert-info').innerHTML = 
+            '<i class=""fas fa-exclamation-triangle"" style=""margin-right: 8px;""></i>You must log in to Shoko Server first. <a href=""/"">Go to main page to log in</a>';
+        return;
+    }
+    
+    let apiSession;
+    try {
+        apiSession = JSON.parse(apiSessionStr);
+        
+        if (apiSession && apiSession.apikey) {
+            const response = await fetch('/anisync/settings', {
+                headers: { 'apikey': apiSession.apikey }
+            });
+            
+            if (response.ok) {
+                const settingsHtml = await response.text();
+                document.body.innerHTML = settingsHtml;
+                
+                // Re-initialize the Save Settings button after content is replaced
+                setTimeout(() => {
+                    const saveBtn = document.getElementById('saveSettingsBtn');
+                    if (saveBtn) {
+                        console.log('Re-attaching Save Settings button handler...');
+                        saveBtn.addEventListener('click', async function(e) {
+                            e.preventDefault();
+                            console.log('=== SAVING SETTINGS ===');
+                            
+                            const settings = {
+                                UpdateNsfw: document.getElementById('UpdateNsfw').checked,
+                                EnableAutoSync: document.getElementById('EnableAutoSync').checked,
+                                SyncOnlyCompleted: document.getElementById('SyncOnlyCompleted').checked,
+                                EnableRewatchDetection: document.getElementById('EnableRewatchDetection').checked,
+                                AllowRollback: document.getElementById('AllowRollback').checked,
+                                TitleMatchThreshold: parseFloat(document.getElementById('TitleMatchThreshold').value) || 0.8,
+                                UseFuzzyMatching: document.getElementById('UseFuzzyMatching').checked,
+                                SyncDelaySeconds: parseInt(document.getElementById('SyncDelaySeconds').value) || 5,
+                                EnableDebugLogging: document.getElementById('EnableDebugLogging').checked
+                            };
+                            
+                            console.log('Settings object:', settings);
+                            
+                            const headers = { 'Content-Type': 'application/json' };
+                            const apiSessionStr = localStorage.getItem('apiSession');
+                            if (apiSessionStr) {
+                                try {
+                                    const apiSession = JSON.parse(apiSessionStr);
+                                    if (apiSession && apiSession.apikey) {
+                                        headers['apikey'] = apiSession.apikey;
+                                        console.log('Added apikey header');
+                                    }
+                                } catch (e) {
+                                    console.error('Failed to parse apiSession:', e);
+                                }
+                            }
+                            
+                            try {
+                                const response = await fetch('/anisync/settings', {
+                                    method: 'POST',
+                                    headers: headers,
+                                    body: JSON.stringify(settings)
+                                });
+                                
+                                console.log('Response status:', response.status);
+                                if (response.ok) {
+                                    console.log('SUCCESS! Redirecting...');
+                                    window.location.href = '/anisync/settings';
+                                } else {
+                                    const responseText = await response.text();
+                                    console.error('Server response:', responseText);
+                                    alert('Failed to save settings: ' + response.status + ' - ' + responseText);
+                                }
+                            } catch (error) {
+                                console.error('Error saving settings:', error);
+                                alert('Error saving settings: ' + error.message);
+                            }
+                        });
+                        
+                        // Also re-attach the refresh token button handler
+                        const refreshBtn = document.getElementById('refreshTokenBtn');
+                        if (refreshBtn) {
+                            console.log('Re-attaching Refresh Token button handler...');
+                            refreshBtn.addEventListener('click', async function(e) {
+                                e.preventDefault();
+                                console.log('=== REFRESHING TOKEN ===');
+                                
+                                const headers = {};
+                                const apiSessionStr = localStorage.getItem('apiSession');
+                                if (apiSessionStr) {
+                                    try {
+                                        const apiSession = JSON.parse(apiSessionStr);
+                                        if (apiSession && apiSession.apikey) {
+                                            headers['apikey'] = apiSession.apikey;
+                                            console.log('Added apikey header for refresh');
+                                        }
+                                    } catch (e) {
+                                        console.error('Failed to parse apiSession:', e);
+                                    }
+                                }
+                                
+                                try {
+                                    const response = await fetch('/anisync/refresh-token', {
+                                        method: 'POST',
+                                        headers: headers
+                                    });
+                                    
+                                    console.log('Refresh response status:', response.status);
+                                    if (response.ok) {
+                                        console.log('Token refreshed successfully!');
+                                        window.location.href = '/anisync/settings';
+                                    } else {
+                                        const responseText = await response.text();
+                                        console.error('Refresh failed:', responseText);
+                                        alert('Failed to refresh connection: ' + response.status);
+                                    }
+                                } catch (error) {
+                                    console.error('Error refreshing token:', error);
+                                    alert('Error refreshing connection: ' + error.message);
+                                }
+                            });
+                        }
+                        
+                        // Also re-attach the logout button handler
+                        const logoutBtn = document.getElementById('logoutBtn');
+                        if (logoutBtn) {
+                            console.log('Re-attaching Logout button handler...');
+                            logoutBtn.addEventListener('click', async function(e) {
+                                e.preventDefault();
+                                console.log('=== LOGGING OUT ===');
+                                
+                                if (confirm('Are you sure you want to disconnect from MyAnimeList?')) {
+                                    const headers = {};
+                                    const apiSessionStr = localStorage.getItem('apiSession');
+                                    if (apiSessionStr) {
+                                        try {
+                                            const apiSession = JSON.parse(apiSessionStr);
+                                            if (apiSession && apiSession.apikey) {
+                                                headers['apikey'] = apiSession.apikey;
+                                            }
+                                        } catch (e) {
+                                            console.error('Failed to parse apiSession:', e);
+                                        }
+                                    }
+                                    
+                                    try {
+                                        const response = await fetch('/anisync/Logout', {
+                                            method: 'POST',
+                                            headers: headers
+                                        });
+                                        
+                                        console.log('Logout response status:', response.status);
+                                        if (response.ok) {
+                                            console.log('Logged out successfully!');
+                                            window.location.href = '/anisync';
+                                        } else {
+                                            const responseText = await response.text();
+                                            console.error('Logout failed:', responseText);
+                                            alert('Failed to logout: ' + response.status);
+                                        }
+                                    } catch (error) {
+                                        console.error('Error during logout:', error);
+                                        alert('Error during logout: ' + error.message);
+                                    }
+                                }
+                            });
+                        }
+                    } else {
+                        console.error('Save Settings button not found after content replacement!');
+                    }
+                }, 100);
+            } else {
+                throw new Error('Failed to load settings');
+            }
+        } else {
+            throw new Error('No API key in session');
+        }
+    } catch (e) {
+        console.error('Session validation failed:', e);
+        document.querySelector('.alert-info').innerHTML = 
+            '<i class=""fas fa-exclamation-triangle"" style=""margin-right: 8px;""></i>Your session has expired. <a href=""/"">Please log in again</a>';
+    }
+});
+</script>";
+            
+            return GetLayout("Settings", false, "Loading...", content);
         }
     }
     
