@@ -16,7 +16,7 @@ namespace Shoko.AniSync.Helpers
             // See https://arm.haglund.dev/docs#tag/v2/operation/v2-getIds
             // TODO: make URL user-configurable to allow self-hosting the server.
             var response = await httpClient.GetAsync($"https://arm.haglund.dev/api/v2/ids?source={source.ToString().ToLower()}&id={metadataId}");
-            StreamReader streamReader = new StreamReader(await response.Content.ReadAsStreamAsync());
+            using var streamReader = new StreamReader(await response.Content.ReadAsStreamAsync());
             string streamText = await streamReader.ReadToEndAsync();
 
             var deserializedResponse = JsonSerializer.Deserialize<OfflineDatabaseResponse>(streamText);

@@ -109,7 +109,7 @@ namespace Shoko.AniSync.Api
             {
                 var content = response.Content.ReadAsStream();
 
-                StreamReader streamReader = new StreamReader(content);
+                using var streamReader = new StreamReader(content);
 
                 TokenResponse? tokenResponse = JsonSerializer.Deserialize<TokenResponse>(streamReader.ReadToEnd());
 

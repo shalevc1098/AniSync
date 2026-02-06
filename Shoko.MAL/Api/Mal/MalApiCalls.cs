@@ -52,7 +52,7 @@ namespace Shoko.AniSync.Api
             var apiCall = await _authApiCall.AuthenticatedApiCall(ApiName.Mal, AuthApiCall.CallType.GET, url.Build(), shokoUsername: shokoUsername);
             if (apiCall != null)
             {
-                StreamReader streamReader = new StreamReader(await apiCall.Content.ReadAsStreamAsync());
+                using var streamReader = new StreamReader(await apiCall.Content.ReadAsStreamAsync());
                 string streamText = await streamReader.ReadToEndAsync();
 
                 return JsonSerializer.Deserialize<User>(streamText);
@@ -101,7 +101,7 @@ namespace Shoko.AniSync.Api
             var apiCall = await _authApiCall.AuthenticatedApiCall(ApiName.Mal, AuthApiCall.CallType.GET, builtUrl, shokoUsername: shokoUsername);
             if (apiCall != null)
             {
-                StreamReader streamReader = new StreamReader(await apiCall.Content.ReadAsStreamAsync());
+                using var streamReader = new StreamReader(await apiCall.Content.ReadAsStreamAsync());
                 var animeList = JsonSerializer.Deserialize<SearchAnimeResponse>(await streamReader.ReadToEndAsync());
 
                 _logger.LogInformation("Search complete");
@@ -136,7 +136,7 @@ namespace Shoko.AniSync.Api
                 var apiCall = await _authApiCall.AuthenticatedApiCall(ApiName.Mal, AuthApiCall.CallType.GET, builtUrl, shokoUsername: shokoUsername);
                 if (apiCall != null)
                 {
-                    StreamReader streamReader = new StreamReader(await apiCall.Content.ReadAsStreamAsync());
+                    using var streamReader = new StreamReader(await apiCall.Content.ReadAsStreamAsync());
                     var options = new JsonSerializerOptions();
                     options.Converters.Add(new JsonStringEnumConverter());
                     var anime = JsonSerializer.Deserialize<Anime>(await streamReader.ReadToEndAsync(), options);
@@ -191,7 +191,7 @@ namespace Shoko.AniSync.Api
                 var apiCall = await _authApiCall.AuthenticatedApiCall(ApiName.Mal, AuthApiCall.CallType.GET, builtUrl, shokoUsername: shokoUsername);
                 if (apiCall != null)
                 {
-                    StreamReader streamReader = new StreamReader(await apiCall.Content.ReadAsStreamAsync());
+                    using var streamReader = new StreamReader(await apiCall.Content.ReadAsStreamAsync());
                     var options = new JsonSerializerOptions();
                     options.Converters.Add(new JsonStringEnumConverter());
                     UserAnimeList? userAnimeListPage = JsonSerializer.Deserialize<UserAnimeList>(await streamReader.ReadToEndAsync(), options);
@@ -307,7 +307,7 @@ namespace Shoko.AniSync.Api
 
                 if (apiCall != null)
                 {
-                    StreamReader streamReader = new StreamReader(await apiCall.Content.ReadAsStreamAsync());
+                    using var streamReader = new StreamReader(await apiCall.Content.ReadAsStreamAsync());
                     var options = new JsonSerializerOptions();
                     options.Converters.Add(new JsonStringEnumConverter());
                     _logger.LogInformation($"Updating anime status (PUT {builtUrl})...");
