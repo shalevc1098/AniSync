@@ -146,7 +146,8 @@ namespace Shoko.AniSync
                 var listOfRelatedAnime = anime.RelatedAnime?.Where(relation => relation.RelationType is AnimeRelationType.Side_Story or AnimeRelationType.Alternative_Version or AnimeRelationType.Alternative_Setting) ?? new List<RelatedAnime>();
                 foreach (RelatedAnime relatedAnime in listOfRelatedAnime)
                 {
-                    var detailedRelatedAnime = await ApiCallHelpers.GetAnime(relatedAnime.Anime?.Id ?? 0, alternativeId: relatedAnime.Anime?.AlternativeId, shokoUsername: shokoUsername);
+                    if (relatedAnime.Anime?.Id is not > 0) continue;
+                    var detailedRelatedAnime = await ApiCallHelpers.GetAnime(relatedAnime.Anime.Id, alternativeId: relatedAnime.Anime.AlternativeId, shokoUsername: shokoUsername);
                     if (detailedRelatedAnime is { Title: { }, AlternativeTitles: { En: { } } })
                     {
                         bool titleMatch = episodeNames.Any(episodeName =>
@@ -181,8 +182,8 @@ namespace Shoko.AniSync
 
         private async Task<Anime?> FetchIdFromProvider(IShokoEpisode episode, string? shokoUsername = null)
         {
-            // Cache key for search results
-            var cacheKey = $"mal_search_{episode.Series?.AnidbAnimeID ?? 0}";
+            // Cache key includes username since NSFW settings are per-user
+            var cacheKey = $"mal_search_{episode.Series?.AnidbAnimeID ?? 0}_{shokoUsername ?? "default"}";
             
             var uniqueAnimes = await _memoryCache.GetOrCreateAsync(cacheKey, async entry =>
             {
@@ -411,7 +412,10 @@ namespace Shoko.AniSync
                             {
                                 // Progress forward - update MAL
                                 shouldUpdate = true;
-                                newEpisodeCount = shokoEpisodeNumber;
+                                // Cap episode count at total episodes to prevent invalid values
+                                newEpisodeCount = (totalEpisodes > 0 && shokoEpisodeNumber > totalEpisodes)
+                                    ? totalEpisodes
+                                    : shokoEpisodeNumber;
                                 
                                 // Update status based on progress
                                 if (currentStatus != Status.Watching && currentStatus != Status.Completed)
@@ -440,7 +444,8 @@ namespace Shoko.AniSync
                             else if (shokoEpisodeNumber < malEpisodeCount)
                             {
                                 // Going backwards - likely a rewatch
-                                if (currentStatus == Status.Completed || malEpisodeCount == totalEpisodes)
+                                bool rewatchDetectionEnabled = Plugin.Instance?.Config?.GetEnableRewatchDetection(shokoUser?.Username) ?? true;
+                                if (rewatchDetectionEnabled && (currentStatus == Status.Completed || malEpisodeCount == totalEpisodes))
                                 {
                                     // Started rewatching a completed series
                                     shouldUpdate = true;
@@ -450,8 +455,8 @@ namespace Shoko.AniSync
                                 }
                                 else
                                 {
-                                    _logger.LogInformation("Episode {Episode} already watched in MAL (has {MalEpisode}), skipping update",
-                                        shokoEpisodeNumber, malEpisodeCount);
+                                    _logger.LogInformation("Episode {Episode} already watched in MAL (has {MalEpisode}), skipping update{Reason}",
+                                        shokoEpisodeNumber, malEpisodeCount, !rewatchDetectionEnabled ? " (rewatch detection disabled)" : "");
                                 }
                             }
                             else
@@ -462,8 +467,8 @@ namespace Shoko.AniSync
                         else
                         {
                             // Episode marked as unwatched in Shoko
-                            // Only update MAL if this is the highest episode (to allow rolling back from the end)
-                            if (shokoEpisodeNumber == malEpisodeCount && malEpisodeCount > 0)
+                            bool rollbackEnabled = Plugin.Instance?.Config?.GetAllowRollback(shokoUser?.Username) ?? false;
+                            if (rollbackEnabled && shokoEpisodeNumber == malEpisodeCount && malEpisodeCount > 0)
                             {
                                 // User is unmarking the highest watched episode - roll back by one
                                 shouldUpdate = true;
@@ -483,9 +488,14 @@ namespace Shoko.AniSync
                                 _logger.LogInformation("Rolling back MAL progress: Episode {OldEpisode} -> {NewEpisode} (unmarked highest episode)", 
                                     malEpisodeCount, newEpisodeCount);
                             }
+                            else if (!rollbackEnabled && shokoEpisodeNumber == malEpisodeCount && malEpisodeCount > 0)
+                            {
+                                _logger.LogInformation("Episode {Episode} unmarked but rollback is disabled in settings - skipping MAL update",
+                                    shokoEpisodeNumber);
+                            }
                             else if (shokoEpisodeNumber < malEpisodeCount)
                             {
-                                _logger.LogInformation("Episode {Episode} unmarked but MAL has higher episodes watched ({MalEpisode}) - skipping rollback to avoid gaps", 
+                                _logger.LogInformation("Episode {Episode} unmarked but MAL has higher episodes watched ({MalEpisode}) - skipping rollback to avoid gaps",
                                     shokoEpisodeNumber, malEpisodeCount);
                             }
                             else

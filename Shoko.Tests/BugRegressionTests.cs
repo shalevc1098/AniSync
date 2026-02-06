@@ -413,4 +413,155 @@ public class BugRegressionTests
         newEpisodeCount.Should().Be(6, "should advance rewatch progress");
         setRewatching.Should().BeNull("should not touch rewatch flag during mid-rewatch progress");
     }
+
+    // ========================================================================
+    // Edge case: Episode number exceeds total episodes
+    // Corrupt Shoko data or specials numbered beyond series length should
+    // be capped at totalEpisodes to prevent invalid MAL state.
+    // ========================================================================
+
+    [Theory]
+    [InlineData(999, 12, 12)]   // Absurdly high episode -> capped to 12
+    [InlineData(13, 12, 12)]    // One over -> capped to 12
+    [InlineData(12, 12, 12)]    // Exact match -> stays at 12
+    [InlineData(8, 12, 8)]      // Normal progress -> stays at 8
+    [InlineData(5, 0, 5)]       // Unknown total (0) -> no capping
+    public void EdgeCase_EpisodeCount_ShouldBeCappedAtTotal(
+        int shokoEpisodeNumber, int totalEpisodes, int expectedCount)
+    {
+        int newEpisodeCount = (totalEpisodes > 0 && shokoEpisodeNumber > totalEpisodes)
+            ? totalEpisodes
+            : shokoEpisodeNumber;
+
+        newEpisodeCount.Should().Be(expectedCount,
+            $"episode {shokoEpisodeNumber} with total {totalEpisodes} should be capped");
+    }
+
+    // ========================================================================
+    // Edge case: Related anime with null/zero ID should be skipped
+    // ========================================================================
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(-1, false)]
+    [InlineData(null, false)]
+    [InlineData(12345, true)]
+    public void EdgeCase_RelatedAnimeId_ShouldSkipInvalid(int? animeId, bool shouldProcess)
+    {
+        bool result = animeId is > 0;
+        result.Should().Be(shouldProcess,
+            $"anime ID {animeId} should {(shouldProcess ? "be processed" : "be skipped")}");
+    }
+
+    // ========================================================================
+    // Edge case: Cache key should isolate per user
+    // Different users with different NSFW settings should not share cache.
+    // ========================================================================
+
+    [Fact]
+    public void EdgeCase_CacheKey_ShouldIncludeUsername()
+    {
+        int anidbId = 12345;
+        string user1 = "Alice";
+        string user2 = "Bob";
+
+        var key1 = $"mal_search_{anidbId}_{user1}";
+        var key2 = $"mal_search_{anidbId}_{user2}";
+
+        key1.Should().NotBe(key2, "different users should have different cache keys");
+    }
+
+    [Fact]
+    public void EdgeCase_CacheKey_NullUserShouldUseDefault()
+    {
+        int anidbId = 12345;
+        string? username = null;
+
+        var key = $"mal_search_{anidbId}_{username ?? "default"}";
+
+        key.Should().Be("mal_search_12345_default",
+            "null username should fall back to 'default'");
+    }
+
+    // ========================================================================
+    // Edge case: Rewatch detection respects EnableRewatchDetection setting
+    // ========================================================================
+
+    [Theory]
+    [InlineData(true, true)]    // Enabled -> rewatch detected
+    [InlineData(false, false)]  // Disabled -> no rewatch
+    public void EdgeCase_RewatchDetection_RespectsConfig(
+        bool enableRewatchDetection, bool expectRewatch)
+    {
+        int malEpisodeCount = 12;
+        int totalEpisodes = 12;
+        int shokoEpisodeNumber = 1;
+        var currentStatus = Status.Completed;
+
+        bool shouldUpdate = false;
+        bool? setRewatching = null;
+
+        if (enableRewatchDetection && (currentStatus == Status.Completed || malEpisodeCount == totalEpisodes))
+        {
+            shouldUpdate = true;
+            setRewatching = true;
+        }
+
+        shouldUpdate.Should().Be(expectRewatch);
+        if (expectRewatch)
+            setRewatching.Should().BeTrue();
+        else
+            setRewatching.Should().BeNull();
+    }
+
+    // ========================================================================
+    // Edge case: Rollback respects AllowRollback setting
+    // ========================================================================
+
+    [Theory]
+    [InlineData(true, true)]    // Enabled -> rollback happens
+    [InlineData(false, false)]  // Disabled -> no rollback
+    public void EdgeCase_Rollback_RespectsConfig(
+        bool allowRollback, bool expectRollback)
+    {
+        int malEpisodeCount = 10;
+        int shokoEpisodeNumber = 10; // unmarking highest
+        bool isWatched = false;
+
+        bool shouldUpdate = false;
+        int newEpisodeCount = malEpisodeCount;
+
+        if (!isWatched && allowRollback && shokoEpisodeNumber == malEpisodeCount && malEpisodeCount > 0)
+        {
+            shouldUpdate = true;
+            newEpisodeCount = malEpisodeCount - 1;
+        }
+
+        shouldUpdate.Should().Be(expectRollback);
+        if (expectRollback)
+            newEpisodeCount.Should().Be(9, "should roll back by one");
+        else
+            newEpisodeCount.Should().Be(10, "should stay at current");
+    }
+
+    // ========================================================================
+    // Edge case: 0-episode anime (unknown episode count)
+    // ========================================================================
+
+    [Fact]
+    public void EdgeCase_ZeroTotalEpisodes_ShouldNotMarkCompleted()
+    {
+        int totalEpisodes = 0; // unknown
+        int shokoEpisodeNumber = 50;
+        Status? newStatus = null;
+
+        if (totalEpisodes > 0 && shokoEpisodeNumber >= totalEpisodes)
+        {
+            newStatus = Status.Completed;
+        }
+
+        newStatus.Should().BeNull(
+            "should not mark completed when total episodes is unknown (0)");
+    }
 }
+

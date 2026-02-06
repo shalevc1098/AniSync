@@ -266,7 +266,17 @@ namespace Shoko.AniSync.Helpers
             };
 
             // Fire and forget - don't wait for the save
-            Task.Run(async () => await AddEntryAsync(username, entry));
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await AddEntryAsync(username, entry);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to save sync history entry for {AnimeTitle}", entry.AnimeTitle);
+                }
+            });
         }
 
     }
