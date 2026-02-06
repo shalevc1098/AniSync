@@ -34,8 +34,21 @@ namespace Shoko.AniSync.Controllers
         private readonly IMemoryCache _memoryCache;
         private readonly IAsyncDelayer _delayer;
         // Shoko Services - these might need to be optional as they may not be available to plugins
-        private readonly IUserDataService _userDataService; // IUserDataService 
+        private readonly IUserDataService _userDataService; // IUserDataService
         private readonly IUserService _userService; // IUserService
+
+        private string ShokoApiBaseUrl
+        {
+            get
+            {
+                var request = _httpContextAccessor?.HttpContext?.Request;
+                if (request != null)
+                {
+                    return $"{request.Scheme}://{request.Host}";
+                }
+                return "http://localhost:8111";
+            }
+        }
 
         public AniSyncController(IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory, IHttpContextAccessor httpContextAccessor, IApplicationPaths applicationPaths, IMemoryCache memoryCache, IUserDataService userDataService, IUserService userService)
         {
@@ -138,7 +151,7 @@ namespace Shoko.AniSync.Controllers
                 
                 // Call Shoko's internal User/Current endpoint
                 // Since we're running as a plugin, we need to use localhost
-                var response = await httpClient.GetAsync("http://localhost:8111/api/v3/User/Current");
+                var response = await httpClient.GetAsync($"{ShokoApiBaseUrl}/api/v3/User/Current");
                 
                 if (!response.IsSuccessStatusCode)
                 {
@@ -548,7 +561,7 @@ namespace Shoko.AniSync.Controllers
                     
                     try
                     {
-                        var response = httpClient.GetAsync("http://localhost:8111/api/v3/User/Current").GetAwaiter().GetResult();
+                        var response = httpClient.GetAsync($"{ShokoApiBaseUrl}/api/v3/User/Current").GetAwaiter().GetResult();
                         if (response.IsSuccessStatusCode)
                         {
                             var content = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();

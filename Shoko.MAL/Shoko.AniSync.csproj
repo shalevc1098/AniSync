@@ -27,7 +27,7 @@
     </ItemGroup>
     
 
-    <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+    <Target Name="PostBuild" AfterTargets="PostBuildEvent" Condition="Exists('$(ProgramData)\ShokoServer\plugins') OR Exists('$(ProgramData)/ShokoServer/plugins')">
         <PropertyGroup>
             <ShokoPluginsDir>$(ProgramData)\ShokoServer\plugins</ShokoPluginsDir>
         </PropertyGroup>

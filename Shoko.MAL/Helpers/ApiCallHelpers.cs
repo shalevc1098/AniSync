@@ -80,7 +80,7 @@ namespace Shoko.AniSync.Helpers
         {
             if (_malApiCalls != null)
             {
-                return await _malApiCalls.GetAnime(id, new[] { "title", "related_anime", "my_list_status", "num_episodes" }, shokoUsername);
+                return await _malApiCalls.GetAnime(id, new[] { "title", "alternative_titles", "start_date", "related_anime", "my_list_status{num_times_rewatched}", "num_episodes" }, shokoUsername);
             }
 
             //if (_aniListApiCalls != null)

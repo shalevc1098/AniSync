@@ -215,7 +215,7 @@ namespace Shoko.AniSync.Api
                         {
                             builtUrl = userAnimeListPage.Paging?.Next!;
                             _logger.LogInformation($"Additional pages found; waiting 2 seconds before calling again...");
-                            Thread.Sleep(2000);
+                            await Task.Delay(2000);
                         }
                         else
                         {
@@ -253,13 +253,9 @@ namespace Shoko.AniSync.Api
                 body.Add(new KeyValuePair<string, string>("status", status.Value.ToString().ToLower()));
             }
 
-            if (isRewatching != null && isRewatching.Value)
+            if (isRewatching != null)
             {
-                body.Add(new KeyValuePair<string, string>("is_rewatching", true.ToString()));
-            }
-            else
-            {
-                body.Add(new KeyValuePair<string, string>("is_rewatching", false.ToString().ToLower()));
+                body.Add(new KeyValuePair<string, string>("is_rewatching", isRewatching.Value.ToString().ToLower()));
             }
 
             if (numberOfTimesRewatched != null)

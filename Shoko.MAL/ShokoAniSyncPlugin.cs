@@ -67,9 +67,12 @@ namespace Shoko.AniSync
                         }
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Failed to get TMDB episode thumbnail");
+                }
             }
-            
+
             if (episode?.TmdbMovies?.Any() == true)
             {
                 try
@@ -85,7 +88,10 @@ namespace Shoko.AniSync
                         }
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Failed to get TMDB movie thumbnail");
+                }
             }
             
             if (episode != null)
@@ -194,7 +200,7 @@ namespace Shoko.AniSync
                                 Anime = a,
                                 MalDate = ParseFullDate(a.StartDate ?? ""),
                                 DiffDays = episode.Series?.AirDate.HasValue == true && ParseFullDate(a.StartDate ?? "").HasValue
-                                    ? Math.Abs((ParseFullDate(a.StartDate ?? "")!.Value - episode.Series.AirDate.Value).TotalDays)
+                                    ? Math.Abs((ParseFullDate(a.StartDate ?? "")!.Value - episode.Series!.AirDate.Value).TotalDays)
                                     : double.MaxValue
                             })
                             .Where(x => x.DiffDays < 30)
@@ -386,7 +392,7 @@ namespace Shoko.AniSync
                         var malEpisodeCount = animeWithStatus.MyListStatus.NumEpisodesWatched;
                         var totalEpisodes = animeWithStatus.NumEpisodes;
                         var isRewatching = animeWithStatus.MyListStatus.IsRewatching;
-                        // RewatchCount is tracked separately from the sync logic
+                        var currentRewatchCount = animeWithStatus.MyListStatus.RewatchCount ?? 0;
                         
                         _logger.LogInformation("Current MAL Status - Episodes: {MalEpisodes}/{Total}, Status: {Status}, Rewatching: {Rewatching}", 
                             malEpisodeCount, totalEpisodes, currentStatus, isRewatching);
@@ -396,6 +402,7 @@ namespace Shoko.AniSync
                         int newEpisodeCount = malEpisodeCount;
                         Status? newStatus = null;
                         bool? setRewatching = null;
+                        int? numberOfTimesRewatched = null;
 
                         if (isWatched)
                         {
@@ -418,6 +425,15 @@ namespace Shoko.AniSync
                                     newStatus = Status.Completed;
                                     setRewatching = false;
                                 }
+
+                                // If currently rewatching and reaching the end, complete and increment rewatch count
+                                if (isRewatching && totalEpisodes > 0 && shokoEpisodeNumber >= totalEpisodes)
+                                {
+                                    newStatus = Status.Completed;
+                                    setRewatching = false;
+                                    numberOfTimesRewatched = currentRewatchCount + 1;
+                                    _logger.LogInformation("Completed rewatch #{Count} for {Title}", numberOfTimesRewatched, anime.Title);
+                                }
                                 
                                 _logger.LogInformation("Updating MAL: Episode {Episode} (was {OldEpisode})", newEpisodeCount, malEpisodeCount);
                             }
@@ -429,11 +445,12 @@ namespace Shoko.AniSync
                                     // Started rewatching a completed series
                                     shouldUpdate = true;
                                     setRewatching = true;
-                                    _logger.LogInformation("Detected rewatch - setting is_rewatching flag");
+                                    newEpisodeCount = shokoEpisodeNumber;
+                                    _logger.LogInformation("Detected rewatch - setting is_rewatching flag, episode progress: {Episode}", shokoEpisodeNumber);
                                 }
                                 else
                                 {
-                                    _logger.LogInformation("Episode {Episode} already watched in MAL (has {MalEpisode}), skipping update", 
+                                    _logger.LogInformation("Episode {Episode} already watched in MAL (has {MalEpisode}), skipping update",
                                         shokoEpisodeNumber, malEpisodeCount);
                                 }
                             }
@@ -456,7 +473,11 @@ namespace Shoko.AniSync
                                 if (currentStatus == Status.Completed)
                                 {
                                     newStatus = Status.Watching;
-                                    setRewatching = false;
+                                    // Only clear rewatch flag if not currently in a rewatch
+                                    if (!isRewatching)
+                                    {
+                                        setRewatching = false;
+                                    }
                                 }
                                 
                                 _logger.LogInformation("Rolling back MAL progress: Episode {OldEpisode} -> {NewEpisode} (unmarked highest episode)", 
@@ -564,10 +585,11 @@ namespace Shoko.AniSync
                             }
                             
                             updateResult = await ApiCallHelpers.UpdateAnime(
-                                anime.Id, 
-                                newEpisodeCount, 
+                                anime.Id,
+                                newEpisodeCount,
                                 statusToUse,
                                 isRewatching: setRewatching,
+                                numberOfTimesRewatched: numberOfTimesRewatched,
                                 startDate: startDate,
                                 endDate: endDate,
                                 alternativeId: anime.AlternativeId,
