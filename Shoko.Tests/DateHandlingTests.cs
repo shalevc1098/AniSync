@@ -1,45 +1,12 @@
 using FluentAssertions;
-using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Logging;
-using Moq;
-using Shoko.AniSync.Api;
-using Shoko.AniSync.Helpers;
-using Shoko.AniSync.Interfaces;
 using Shoko.AniSync.Models.Mal;
 using System;
-using System.Net.Http;
-using System.Threading.Tasks;
 using Xunit;
 
 namespace Shoko.Tests
 {
     public class DateHandlingTests
     {
-        private readonly Mock<IHttpClientFactory> _httpClientFactoryMock;
-        private readonly Mock<ILoggerFactory> _loggerFactoryMock;
-        private readonly Mock<ILogger<MalApiCalls>> _loggerMock;
-        private readonly Mock<IMemoryCache> _memoryCacheMock;
-        private readonly Mock<IAsyncDelayer> _delayerMock;
-        private readonly MalApiCalls _malApiCalls;
-
-        public DateHandlingTests()
-        {
-            _httpClientFactoryMock = new Mock<IHttpClientFactory>();
-            _loggerFactoryMock = new Mock<ILoggerFactory>();
-            _loggerMock = new Mock<ILogger<MalApiCalls>>();
-            _memoryCacheMock = new Mock<IMemoryCache>();
-            _delayerMock = new Mock<IAsyncDelayer>();
-
-            _loggerFactoryMock.Setup(x => x.CreateLogger(It.IsAny<string>()))
-                .Returns((string categoryName) => _loggerMock.Object);
-
-            _malApiCalls = new MalApiCalls(
-                _httpClientFactoryMock.Object,
-                _loggerFactoryMock.Object,
-                _memoryCacheMock.Object,
-                _delayerMock.Object);
-        }
-
         [Fact]
         public void UpdateAnimeStatus_WithStartDate_FormatsCorrectly()
         {

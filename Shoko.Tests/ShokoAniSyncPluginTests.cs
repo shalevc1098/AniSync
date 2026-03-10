@@ -7,7 +7,9 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Moq;
+using Shoko.Abstractions.Config;
 using Shoko.AniSync;
+using Shoko.AniSync.Configuration;
 using Shoko.AniSync.Helpers;
 using Shoko.AniSync.Interfaces;
 using Shoko.AniSync.Models.Mal;
@@ -124,6 +126,8 @@ public class ShokoAniSyncPluginTests
         var memoryCache = new MemoryCache(new MemoryCacheOptions());
         var metadataServiceMock = new Mock<IMetadataService>();
         var applicationPathsMock = new Mock<IApplicationPaths>();
+        var configServiceMock = new Mock<IConfigurationService>();
+        var configProviderMock = new Mock<ConfigurationProvider<Config>>(configServiceMock.Object);
 
         applicationPathsMock.Setup(x => x.PluginsPath).Returns(System.IO.Path.GetTempPath());
 
@@ -136,7 +140,8 @@ public class ShokoAniSyncPluginTests
             loggerFactoryMock.Object,
             memoryCache,
             metadataServiceMock.Object,
-            userDataServiceMock?.Object ?? Mock.Of<IUserDataService>());
+            userDataServiceMock?.Object ?? Mock.Of<IUserDataService>(),
+            configProviderMock.Object);
     }
 }
 

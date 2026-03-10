@@ -21,31 +21,17 @@ namespace Shoko.Tests;
 public class ApiCallHelpersTests
 {
     [Fact]
-    public async Task SearchAnime_Should_Return_Null_When_MalApiCalls_Is_Null()
+    public async Task SearchAnime_Should_Return_Empty_When_MalApiCalls_Is_Null()
     {
         // Arrange
-        var originalInstance = AniSync.Plugin.Instance;
-        try
-        {
-            var plugin = new AniSync.Plugin();
-            typeof(AniSync.Plugin).GetProperty("Instance")?.SetValue(null, plugin);
-            var config = new Config("test-config.json");
-            // No need to set UpdateNsfw globally anymore - it's per-user
-            plugin.GetType().GetProperty("Config")?.SetValue(plugin, config);
+        var apiCallHelpers = new ApiCallHelpers();
 
-            var apiCallHelpers = new ApiCallHelpers();
-            
-            // Act
-            var result = await apiCallHelpers.SearchAnime("test");
+        // Act
+        var result = await apiCallHelpers.SearchAnime("test");
 
-            // Assert
-            result.Should().NotBeNull();
-            result.Should().BeEmpty();
-        }
-        finally
-        {
-            typeof(AniSync.Plugin).GetProperty("Instance")?.SetValue(null, originalInstance);
-        }
+        // Assert
+        result.Should().NotBeNull();
+        result.Should().BeEmpty();
     }
 
     [Fact]
@@ -53,7 +39,7 @@ public class ApiCallHelpersTests
     {
         // Arrange
         var apiCallHelpers = new ApiCallHelpers();
-        
+
         // Act
         var result = await apiCallHelpers.GetAnime(123);
 
@@ -66,7 +52,7 @@ public class ApiCallHelpersTests
     {
         // Arrange
         var apiCallHelpers = new ApiCallHelpers();
-        
+
         // Act
         var result = await apiCallHelpers.UpdateAnime(123, 5, Status.Watching);
 
@@ -79,7 +65,7 @@ public class ApiCallHelpersTests
     {
         // Arrange
         var apiCallHelpers = new ApiCallHelpers();
-        
+
         // Act
         var result = await apiCallHelpers.GetUser();
 
@@ -92,35 +78,13 @@ public class ApiCallHelpersTests
     {
         // Arrange
         var apiCallHelpers = new ApiCallHelpers();
-        
+
         // Act
         var result = await apiCallHelpers.GetAnimeList(Status.Watching);
 
         // Assert
         result.Should().NotBeNull();
         result.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void Constructor_Should_Accept_MalApiCalls()
-    {
-        // Arrange
-        var httpClientFactoryMock = new Mock<IHttpClientFactory>();
-        var loggerFactoryMock = new Mock<ILoggerFactory>();
-        var memoryCacheMock = new Mock<IMemoryCache>();
-        var delayerMock = new Mock<IAsyncDelayer>();
-
-        var malApiCalls = new MalApiCalls(
-            httpClientFactoryMock.Object,
-            loggerFactoryMock.Object,
-            memoryCacheMock.Object,
-            delayerMock.Object);
-
-        // Act
-        var apiCallHelpers = new ApiCallHelpers(malApiCalls);
-
-        // Assert
-        apiCallHelpers.Should().NotBeNull();
     }
 
     [Fact]
