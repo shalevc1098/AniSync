@@ -1,9 +1,6 @@
-﻿using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.FileProviders;
-using Shoko.AniSync.Controllers;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.DependencyInjection;
 using Shoko.Abstractions.Plugin;
-using System;
-using System.Reflection;
 
 namespace Shoko.AniSync
 {
@@ -12,30 +9,14 @@ namespace Shoko.AniSync
         /// <inheritdoc />
         public void RegisterServices(IServiceCollection services, IApplicationPaths applicationPaths)
         {
-            services.AddHttpClient();
             services.AddHttpContextAccessor();
             services.AddMemoryCache();
-            
-            // Add session support for remembering authenticated users
-            services.AddDistributedMemoryCache();
-            services.AddSession(options =>
-            {
-                options.IdleTimeout = TimeSpan.FromDays(30); // Session persists for 30 days
-                options.Cookie.HttpOnly = true;
-                options.Cookie.IsEssential = true;
-                options.Cookie.Name = ".Shoko.AniSync.Session";
-            });
-            
-            // Note: Shoko's internal services like IUserDataService should be automatically available
-            // through the DI container if they're registered in Shoko Server
-
-            // Add MVC with Views support
-            var assembly = typeof(AniSyncController).Assembly;
-            var mvcBuilder = services.AddControllersWithViews();
-            
-            mvcBuilder.AddApplicationPart(assembly);
-
             services.AddHostedService<ShokoAniSyncPlugin>();
         }
+    }
+
+    public class PluginApplicationRegistration : IPluginApplicationRegistration
+    {
+        public void RegisterServices(IApplicationBuilder application, IApplicationPaths applicationPaths) { }
     }
 }
