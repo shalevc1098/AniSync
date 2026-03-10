@@ -1,5 +1,7 @@
-﻿using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using Shoko.Abstractions.Config;
+using Shoko.Abstractions.Plugin;
 using Shoko.AniSync.Configuration;
 using Shoko.AniSync.Helpers;
 using Shoko.AniSync.Interfaces;
@@ -21,6 +23,8 @@ namespace Shoko.AniSync.Api
         private readonly ILoggerFactory _loggerFactory;
         private readonly ILogger<ApiAuthentication> _logger;
         private readonly IMemoryCache _memoryCache;
+        private readonly ConfigurationProvider<Config> _configProvider;
+        private readonly IApplicationPaths _applicationPaths;
         private readonly ProviderApiAuth _providerApiAuth;
         private readonly string _authApiUrl;
         private readonly string _redirectUrl;
@@ -28,15 +32,17 @@ namespace Shoko.AniSync.Api
         private readonly string _clientId;
         private readonly string _clientSecret;
 
-        public ApiAuthentication(ApiName provider, IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory, IMemoryCache? memoryCache = null, string? baseUrl = null)
+        public ApiAuthentication(ApiName provider, IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory, ConfigurationProvider<Config> configProvider, IApplicationPaths applicationPaths, IMemoryCache? memoryCache = null, string? baseUrl = null)
         {
             _provider = provider;
             _httpClientFactory = httpClientFactory;
             _loggerFactory = loggerFactory;
             _logger = _loggerFactory.CreateLogger<ApiAuthentication>();
             _memoryCache = memoryCache ?? new MemoryCache(new MemoryCacheOptions());
+            _configProvider = configProvider;
+            _applicationPaths = applicationPaths;
 
-            var gs = GlobalSettings.Load();
+            var gs = GlobalSettings.Load(applicationPaths);
             _clientId = gs?.MalClientId ?? string.Empty;
             _clientSecret = gs?.MalClientSecret ?? string.Empty;
 
@@ -130,13 +136,13 @@ namespace Shoko.AniSync.Api
 
                 TokenResponse? tokenResponse = JsonSerializer.Deserialize<TokenResponse>(streamReader.ReadToEnd());
 
-                Config? pluginConfig = Plugin.Instance?.Config;
-                if (pluginConfig != null && tokenResponse != null)
+                var pluginConfig = _configProvider.Load();
+                if (tokenResponse != null)
                 {
                     UserApiAuth newUserApiAuth = new UserApiAuth
                     {
                         AccessToken = tokenResponse.access_token ?? string.Empty,
-                        ExpiresAt = tokenResponse.expires_in.HasValue 
+                        ExpiresAt = tokenResponse.expires_in.HasValue
                             ? DateTimeOffset.UtcNow.AddSeconds(tokenResponse.expires_in.Value).ToUnixTimeSeconds()
                             : (long?)null
                     };
@@ -171,7 +177,8 @@ namespace Shoko.AniSync.Api
                                 if (!string.IsNullOrEmpty(shokoUsername))
                                 {
                                     pluginConfig.SetAuthForShokoUser(shokoUsername, _provider, newUserApiAuth);
-                                    var malApi = new MalApiCalls(_httpClientFactory, _loggerFactory, _memoryCache, new Delayer());
+                                    _configProvider.Save(pluginConfig);
+                                    var malApi = new MalApiCalls(_httpClientFactory, _loggerFactory, _memoryCache, new Delayer(), _configProvider, _applicationPaths);
                                     var userInfo = malApi.GetUserInformation(shokoUsername).Result;
                                     if (userInfo != null)
                                     {
@@ -196,10 +203,11 @@ namespace Shoko.AniSync.Api
                         _logger.LogError("No Shoko user specified during authentication");
                         throw new InvalidOperationException("Cannot authenticate without a Shoko user context");
                     }
-                    
+
                     newUserApiAuth.ShokoUsername = userToLink;
                     pluginConfig.SetAuthForShokoUser(userToLink, _provider, newUserApiAuth);
-                    _logger.LogInformation("Linked MAL account {MalUser} to Shoko user {ShokoUser}", 
+                    _configProvider.Save(pluginConfig);
+                    _logger.LogInformation("Linked MAL account {MalUser} to Shoko user {ShokoUser}",
                         newUserApiAuth.Username, userToLink);
                     return newUserApiAuth;
                 }
@@ -210,17 +218,17 @@ namespace Shoko.AniSync.Api
 
         public Task RefreshAccessToken(string shokoUsername)
         {
-            var config = Plugin.Instance?.Config;
-            var auth = config?.GetAuthForShokoUser(shokoUsername, _provider);
+            var config = _configProvider.Load();
+            var auth = config.GetAuthForShokoUser(shokoUsername, _provider);
             if (auth?.RefreshToken == null)
             {
                 throw new InvalidOperationException("No refresh token available for user " + shokoUsername);
             }
-            
+
             GetToken(refreshToken: auth.RefreshToken, shokoUsername: shokoUsername);
             return Task.CompletedTask;
         }
-        
+
         private static string GenerateCodeChallenge()
         {
             return new string((from s in Enumerable.Repeat("AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz0123456789-._~", 128)

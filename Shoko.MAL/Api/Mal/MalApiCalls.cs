@@ -1,6 +1,8 @@
 ﻿using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using Shoko.Abstractions.Config;
+using Shoko.Abstractions.Plugin;
 using Shoko.AniSync.Configuration;
 using Shoko.AniSync.Helpers;
 using Shoko.AniSync.Interfaces;
@@ -25,10 +27,10 @@ namespace Shoko.AniSync.Api
 
         private string ApiUrl => _apiBaseUrl + "v" + _apiVersion;
 
-        public MalApiCalls(IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory, IMemoryCache memoryCache, IAsyncDelayer delayer)
+        public MalApiCalls(IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory, IMemoryCache memoryCache, IAsyncDelayer delayer, ConfigurationProvider<Config> configProvider, IApplicationPaths applicationPaths)
         {
             _logger = loggerFactory.CreateLogger<MalApiCalls>();
-            _authApiCall = new AuthApiCall(httpClientFactory, loggerFactory, memoryCache, delayer);
+            _authApiCall = new AuthApiCall(httpClientFactory, loggerFactory, memoryCache, delayer, configProvider, applicationPaths);
         }
 
         public class User

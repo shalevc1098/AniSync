@@ -1,3 +1,4 @@
+using Shoko.Abstractions.Plugin;
 using System.IO;
 using System.Text.Json;
 
@@ -10,11 +11,9 @@ namespace Shoko.AniSync.Configuration
 
         private const string FileName = "global-settings.json";
 
-        public static GlobalSettings? Load()
+        public static GlobalSettings? Load(IApplicationPaths applicationPaths)
         {
-            var dir = Plugin.Instance?.PluginDirectory;
-            if (string.IsNullOrEmpty(dir)) return null;
-
+            var dir = Path.Combine(applicationPaths.PluginsPath, "AniSync");
             var path = Path.Combine(dir, FileName);
             if (!File.Exists(path)) return null;
 
@@ -22,10 +21,9 @@ namespace Shoko.AniSync.Configuration
             return JsonSerializer.Deserialize<GlobalSettings>(json);
         }
 
-        public void Save()
+        public void Save(IApplicationPaths applicationPaths)
         {
-            var dir = Plugin.Instance?.PluginDirectory;
-            if (string.IsNullOrEmpty(dir)) return;
+            var dir = Path.Combine(applicationPaths.PluginsPath, "AniSync");
 
             if (!Directory.Exists(dir))
                 Directory.CreateDirectory(dir);

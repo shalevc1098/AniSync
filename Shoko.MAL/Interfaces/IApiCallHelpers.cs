@@ -11,7 +11,7 @@ namespace Shoko.AniSync.Interfaces
 {
     public interface IApiCallHelpers
     {
-        Task<List<Anime>?> SearchAnime(string query, string? shokoUsername = null);
+        Task<List<Anime>?> SearchAnime(string query, bool updateNsfw = false, string? shokoUsername = null);
         Task<Anime?> GetAnime(int id, string? alternativeId = null, bool getRelated = false, string? shokoUsername = null);
         Task<UpdateAnimeStatusResponse?> UpdateAnime(int animeId, int numberOfWatchedEpisodes, Status status,
             bool? isRewatching = null, int? numberOfTimesRewatched = null, DateTime? startDate = null, DateTime? endDate = null, int? score = null, string? alternativeId = null, AnimeOfflineDatabaseHelpers.OfflineDatabaseResponse? ids = null, bool? isShow = null, string? shokoUsername = null);

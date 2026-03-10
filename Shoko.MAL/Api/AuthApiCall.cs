@@ -1,5 +1,7 @@
-﻿using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using Shoko.Abstractions.Config;
+using Shoko.Abstractions.Plugin;
 using Shoko.AniSync.Configuration;
 using Shoko.AniSync.Interfaces;
 using Shoko.AniSync.Models;
@@ -21,18 +23,22 @@ namespace Shoko.AniSync.Api
         private readonly ILogger<AuthApiCall> _logger;
         private readonly IMemoryCache _memoryCache;
         private readonly IAsyncDelayer _delayer;
+        private readonly ConfigurationProvider<Config> _configProvider;
+        private readonly IApplicationPaths _applicationPaths;
 
         public static int defaultTimeoutSeconds = 5;
         public static int timeoutIncrementMultiplier = 2;
         private static readonly SemaphoreSlim _refreshLock = new(1, 1);
 
-        public AuthApiCall(IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory, IMemoryCache memoryCache, IAsyncDelayer delayer)
+        public AuthApiCall(IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory, IMemoryCache memoryCache, IAsyncDelayer delayer, ConfigurationProvider<Config> configProvider, IApplicationPaths applicationPaths)
         {
             _httpClientFactory = httpClientFactory;
             _loggerFactory = loggerFactory;
             _logger = loggerFactory.CreateLogger<AuthApiCall>();
             _memoryCache = memoryCache;
             _delayer = delayer;
+            _configProvider = configProvider;
+            _applicationPaths = applicationPaths;
         }
 
         /// <summary>
@@ -57,7 +63,8 @@ namespace Shoko.AniSync.Api
                 return null;
             }
 
-            UserApiAuth? auth = Plugin.Instance?.Config?.GetAuthForShokoUser(shokoUsername, provider);
+            var config = _configProvider.Load();
+            UserApiAuth? auth = config.GetAuthForShokoUser(shokoUsername, provider);
 
             if (auth == null)
             {
@@ -181,7 +188,8 @@ namespace Shoko.AniSync.Api
                         try
                         {
                             // Re-read auth from config - another thread may have already refreshed
-                            var latestAuth = Plugin.Instance?.Config?.GetAuthForShokoUser(shokoUsername, provider);
+                            var latestConfig = _configProvider.Load();
+                            var latestAuth = latestConfig.GetAuthForShokoUser(shokoUsername, provider);
                             if (latestAuth != null && latestAuth.AccessToken != auth.AccessToken)
                             {
                                 // Token was already refreshed by another thread, use it
@@ -194,7 +202,7 @@ namespace Shoko.AniSync.Api
                                 UserApiAuth newAuth;
                                 try
                                 {
-                                    newAuth = new ApiAuthentication(provider, _httpClientFactory, _loggerFactory, _memoryCache).GetToken(refreshToken: auth.RefreshToken, shokoUsername: auth.ShokoUsername);
+                                    newAuth = new ApiAuthentication(provider, _httpClientFactory, _loggerFactory, _configProvider, _applicationPaths, _memoryCache).GetToken(refreshToken: auth.RefreshToken, shokoUsername: auth.ShokoUsername);
                                 }
                                 catch (Exception e)
                                 {

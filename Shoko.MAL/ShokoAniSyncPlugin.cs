@@ -1,5 +1,6 @@
-﻿using Shoko.Abstractions.Events;
+using Shoko.Abstractions.Events;
 using Shoko.Abstractions.Services;
+using Shoko.Abstractions.Config;
 using Shoko.Abstractions.Plugin;
 using Shoko.Abstractions.Metadata;
 using Shoko.Abstractions.Metadata.Shoko;
@@ -30,10 +31,11 @@ namespace Shoko.AniSync
         private readonly ILogger<ShokoAniSyncPlugin> _logger;
         private readonly IUserDataService _userDataService;
         private readonly IApplicationPaths _applicationPaths;
+        private readonly ConfigurationProvider<Config> _configProvider;
         public static SyncHistoryManager SyncHistory { get; private set; } = null!;
 
         // Shoko will inject the IMetadataService for you
-        public ShokoAniSyncPlugin(IApplicationPaths applicationPaths, IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory, IMemoryCache memoryCache, IMetadataService metadataService, IUserDataService userDataService)
+        public ShokoAniSyncPlugin(IApplicationPaths applicationPaths, IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory, IMemoryCache memoryCache, IMetadataService metadataService, IUserDataService userDataService, ConfigurationProvider<Config> configProvider)
         {
             _httpClientFactory = httpClientFactory;
             _loggerFactory = loggerFactory;
@@ -42,7 +44,8 @@ namespace Shoko.AniSync
             _metadataService = metadataService;
             _userDataService = userDataService;
             _applicationPaths = applicationPaths;
-            
+            _configProvider = configProvider;
+
             // Initialize sync history manager
             SyncHistory = new SyncHistoryManager(Path.Combine(applicationPaths.PluginsPath, "AniSync"), loggerFactory);
         }
@@ -93,12 +96,12 @@ namespace Shoko.AniSync
                     _logger.LogDebug(ex, "Failed to get TMDB movie thumbnail");
                 }
             }
-            
+
             if (episode != null)
             {
                 return $"/api/v3/Episode/{episode.AnidbEpisodeID}/Images/Thumbnail";
             }
-            
+
             return anime?.MainPicture?.Medium ?? anime?.MainPicture?.Large;
         }
 
@@ -181,21 +184,22 @@ namespace Shoko.AniSync
             return null;
         }
 
-        private async Task<Anime?> FetchIdFromProvider(IApiCallHelpers apiCallHelpers, IShokoEpisode episode, string? shokoUsername = null)
+        private async Task<Anime?> FetchIdFromProvider(IApiCallHelpers apiCallHelpers, IShokoEpisode episode, Config config, string? shokoUsername = null)
         {
             // Cache key includes username since NSFW settings are per-user
             var cacheKey = $"mal_search_{episode.Series?.AnidbAnimeID ?? 0}_{shokoUsername ?? "default"}";
-            
+
+            var updateNsfw = config.GetUpdateNsfw(shokoUsername);
             var uniqueAnimes = await _memoryCache.GetOrCreateAsync(cacheKey, async entry =>
             {
                 entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(15);
-                
-                var searchTasks = episode.Series?.Titles?.Select(t => apiCallHelpers.SearchAnime(t.Value, shokoUsername)).ToArray() ?? new Task<List<Anime>?>[0];
+
+                var searchTasks = episode.Series?.Titles?.Select(t => apiCallHelpers.SearchAnime(t.Value, updateNsfw, shokoUsername)).ToArray() ?? new Task<List<Anime>?>[0];
                 var results = await Task.WhenAll(searchTasks);
                 var allAnimes = results.SelectMany(list => list ?? new List<Anime>());
                 return allAnimes.DistinctBy(a => a.Id).ToList();
             });
-            
+
             var candidates = (uniqueAnimes ?? new List<Anime>())
                             .Where(a => a != null && TitleCheck(a, episode))
                             .Select(a => new {
@@ -208,39 +212,37 @@ namespace Shoko.AniSync
                             .Where(x => x.DiffDays < 30)
                             .OrderBy(x => x.DiffDays)
                             .ToList();
-            
+
             if (candidates.Count > 1)
             {
-                _logger.LogDebug("Found {Count} candidates for {Title}, selected best match with {Days} days difference", 
+                _logger.LogDebug("Found {Count} candidates for {Title}, selected best match with {Days} days difference",
                     candidates.Count, episode.Series?.Titles?.First()?.Value ?? "Unknown", candidates.First().DiffDays.ToString("0"));
             }
-            
+
             Anime? anime = candidates.FirstOrDefault()?.Anime;
             if (anime == null)
             {
                 _logger.LogError("Could not find anime for {Title}", episode.Series?.Titles?.First()?.Value ?? "Unknown");
                 return null;
             }
-            
-            // Only fetch full details if we don't have them cached and actually need related anime
-            // For now, return the basic anime object as it contains most needed fields
+
             return anime;
         }
 
-        private async Task<Anime?> GetIdFromOfflineDb(IApiCallHelpers apiCallHelpers, IShokoEpisode episode, string? shokoUsername = null)
+        private async Task<Anime?> GetIdFromOfflineDb(IApiCallHelpers apiCallHelpers, IShokoEpisode episode, Config config, string? shokoUsername = null)
         {
             var offlineDbIds = await AnimeOfflineDatabaseHelpers.GetProviderIdsFromMetadataProvider(_httpClientFactory.CreateClient(), episode.Series?.AnidbAnimeID ?? 0, AnimeOfflineDatabaseHelpers.Source.Anidb);
             if (offlineDbIds == null || offlineDbIds.Mal == null)
             {
                 _logger.LogWarning("Could not get offline database IDs for AniDB ID {AnidbId}, fetching from provider...", episode.Series?.AnidbAnimeID ?? 0);
-                return await FetchIdFromProvider(apiCallHelpers, episode, shokoUsername);
+                return await FetchIdFromProvider(apiCallHelpers, episode, config, shokoUsername);
             }
             var malId = offlineDbIds.Mal;
             var anime = await apiCallHelpers.GetAnime(malId.Value, shokoUsername: shokoUsername);
             if (anime == null)
             {
                 _logger.LogError("Could not get anime for MAL ID {MalId}, fetching from provider...", malId);
-                return await FetchIdFromProvider(apiCallHelpers, episode, shokoUsername);
+                return await FetchIdFromProvider(apiCallHelpers, episode, config, shokoUsername);
             }
             return anime;
         }
@@ -250,6 +252,8 @@ namespace Shoko.AniSync
         {
             try
             {
+                var config = _configProvider.Load();
+
                 // Get the user who triggered this event
                 var shokoUser = e.User;
                 if (shokoUser != null)
@@ -263,7 +267,7 @@ namespace Shoko.AniSync
                 }
 
                 // Check if auto-sync is enabled for this user
-                if (!(Plugin.Instance?.Config?.GetEnableAutoSync(shokoUser?.Username) ?? true))
+                if (!config.GetEnableAutoSync(shokoUser?.Username))
                 {
                     _logger.LogDebug("Auto-sync is disabled for user {Username}, skipping", shokoUser?.Username);
                     return;
@@ -286,9 +290,9 @@ namespace Shoko.AniSync
 
                 // Get the correct MAL account for this user
                 UserApiAuth? userAuth = null;
-                if (shokoUser != null && Plugin.Instance?.Config != null)
+                if (shokoUser != null)
                 {
-                    userAuth = Plugin.Instance.Config.GetAuthForShokoUser(shokoUser.Username!);
+                    userAuth = config.GetAuthForShokoUser(shokoUser.Username!);
                     if (userAuth == null)
                     {
                         _logger.LogWarning("No MAL account configured for Shoko user {Username}, skipping sync", shokoUser.Username);
@@ -309,9 +313,10 @@ namespace Shoko.AniSync
                     _logger.LogWarning("MAL token expired for user {User}, attempting refresh...", shokoUser.Username);
                     try
                     {
-                        var auth = new ApiAuthentication(ApiName.Mal, _httpClientFactory, _loggerFactory, _memoryCache);
+                        var auth = new ApiAuthentication(ApiName.Mal, _httpClientFactory, _loggerFactory, _configProvider, _applicationPaths, _memoryCache);
                         await auth.RefreshAccessToken(shokoUser.Username!);
-                        userAuth = Plugin.Instance.Config.GetAuthForShokoUser(shokoUser.Username!);
+                        config = _configProvider.Load();
+                        userAuth = config.GetAuthForShokoUser(shokoUser.Username!);
                     }
                     catch (Exception ex)
                     {
@@ -321,11 +326,11 @@ namespace Shoko.AniSync
                 }
 
                 IApiCallHelpers apiCallHelpers;
-                switch (Plugin.Instance?.Config?.SelectedProvider ?? Configuration.ApiName.Mal)
+                switch (config.SelectedProvider)
                 {
                     case Configuration.ApiName.Mal:
                         // Use the user-specific MAL API with their credentials
-                        var malApiCalls = new MalApiCalls(_httpClientFactory, _loggerFactory, _memoryCache, new Delayer());
+                        var malApiCalls = new MalApiCalls(_httpClientFactory, _loggerFactory, _memoryCache, new Delayer(), _configProvider, _applicationPaths);
                         apiCallHelpers = new ApiCallHelpers(malApiCalls: malApiCalls);
                         break;
                     default:
@@ -334,7 +339,7 @@ namespace Shoko.AniSync
                 }
 
                 // Apply configured sync delay before making API calls
-                var syncDelaySeconds = Plugin.Instance?.Config?.GetSyncDelaySeconds(shokoUser?.Username) ?? 5;
+                var syncDelaySeconds = config.GetSyncDelaySeconds(shokoUser?.Username);
                 if (syncDelaySeconds > 0)
                 {
                     _logger.LogDebug("Applying sync delay of {Seconds}s for user {Username}", syncDelaySeconds, shokoUser?.Username);
@@ -351,17 +356,17 @@ namespace Shoko.AniSync
                 bool isWatched = e.UserData.IsWatched;
                 int shokoEpisodeNumber = maxEpisode.EpisodeNumber;
                 int playbackCount = e.UserData.PlaybackCount;
-                
-                _logger.LogInformation("Episode {EpisodeNumber} event: Reason={Reason}, PlaybackCount={Count}, IsWatched={Watched} for {Title}", 
+
+                _logger.LogInformation("Episode {EpisodeNumber} event: Reason={Reason}, PlaybackCount={Count}, IsWatched={Watched} for {Title}",
                     shokoEpisodeNumber, e.Reason, playbackCount, isWatched, maxEpisode.Series?.Title ?? "Unknown");
 
-                var anime = await GetIdFromOfflineDb(apiCallHelpers, maxEpisode, shokoUser?.Username);
+                var anime = await GetIdFromOfflineDb(apiCallHelpers, maxEpisode, config, shokoUser?.Username);
                 if (anime != null)
                 {
                     _logger.LogInformation("Found Anime: {Title} ({Id})", anime.Title, anime.Id);
 
                     // Check SyncOnlyCompleted - if enabled, skip non-completion syncs
-                    bool syncOnlyCompleted = Plugin.Instance?.Config?.GetSyncOnlyCompleted(shokoUser?.Username) ?? true;
+                    bool syncOnlyCompleted = config.GetSyncOnlyCompleted(shokoUser?.Username);
                     if (syncOnlyCompleted && isWatched && anime.NumEpisodes > 0 && shokoEpisodeNumber < anime.NumEpisodes)
                     {
                         _logger.LogDebug("SyncOnlyCompleted is enabled and episode {Episode}/{Total} is not the last - skipping sync for {Title}",
@@ -371,7 +376,7 @@ namespace Shoko.AniSync
 
                     // Fetch the anime from user's list to get current status
                     var animeWithStatus = await apiCallHelpers.GetAnime(anime.Id, alternativeId: anime.AlternativeId, getRelated: false, shokoUsername: shokoUser?.Username);
-                    
+
                     if (animeWithStatus?.MyListStatus != null)
                     {
                         var currentStatus = animeWithStatus.MyListStatus.Status;
@@ -379,8 +384,8 @@ namespace Shoko.AniSync
                         var totalEpisodes = animeWithStatus.NumEpisodes;
                         var isRewatching = animeWithStatus.MyListStatus.IsRewatching;
                         var currentRewatchCount = animeWithStatus.MyListStatus.RewatchCount ?? 0;
-                        
-                        _logger.LogInformation("Current MAL Status - Episodes: {MalEpisodes}/{Total}, Status: {Status}, Rewatching: {Rewatching}", 
+
+                        _logger.LogInformation("Current MAL Status - Episodes: {MalEpisodes}/{Total}, Status: {Status}, Rewatching: {Rewatching}",
                             malEpisodeCount, totalEpisodes, currentStatus, isRewatching);
 
                         // Determine if we need to update MAL
@@ -401,13 +406,13 @@ namespace Shoko.AniSync
                                 newEpisodeCount = (totalEpisodes > 0 && shokoEpisodeNumber > totalEpisodes)
                                     ? totalEpisodes
                                     : shokoEpisodeNumber;
-                                
+
                                 // Update status based on progress
                                 if (currentStatus != Status.Watching && currentStatus != Status.Completed)
                                 {
                                     newStatus = Status.Watching;
                                 }
-                                
+
                                 // Check if completed
                                 if (totalEpisodes > 0 && shokoEpisodeNumber >= totalEpisodes)
                                 {
@@ -423,13 +428,13 @@ namespace Shoko.AniSync
                                     numberOfTimesRewatched = currentRewatchCount + 1;
                                     _logger.LogInformation("Completed rewatch #{Count} for {Title}", numberOfTimesRewatched, anime.Title);
                                 }
-                                
+
                                 _logger.LogInformation("Updating MAL: Episode {Episode} (was {OldEpisode})", newEpisodeCount, malEpisodeCount);
                             }
                             else if (shokoEpisodeNumber < malEpisodeCount)
                             {
                                 // Going backwards - likely a rewatch
-                                bool rewatchDetectionEnabled = Plugin.Instance?.Config?.GetEnableRewatchDetection(shokoUser?.Username) ?? true;
+                                bool rewatchDetectionEnabled = config.GetEnableRewatchDetection(shokoUser?.Username);
                                 if (rewatchDetectionEnabled && (currentStatus == Status.Completed || malEpisodeCount == totalEpisodes))
                                 {
                                     shouldUpdate = true;
@@ -459,13 +464,13 @@ namespace Shoko.AniSync
                         else
                         {
                             // Episode marked as unwatched in Shoko
-                            bool rollbackEnabled = Plugin.Instance?.Config?.GetAllowRollback(shokoUser?.Username) ?? false;
+                            bool rollbackEnabled = config.GetAllowRollback(shokoUser?.Username);
                             if (rollbackEnabled && shokoEpisodeNumber == malEpisodeCount && malEpisodeCount > 0)
                             {
                                 // User is unmarking the highest watched episode - roll back by one
                                 shouldUpdate = true;
                                 newEpisodeCount = malEpisodeCount - 1;
-                                
+
                                 // Update status if rolling back from completed
                                 if (currentStatus == Status.Completed)
                                 {
@@ -476,8 +481,8 @@ namespace Shoko.AniSync
                                         setRewatching = false;
                                     }
                                 }
-                                
-                                _logger.LogInformation("Rolling back MAL progress: Episode {OldEpisode} -> {NewEpisode} (unmarked highest episode)", 
+
+                                _logger.LogInformation("Rolling back MAL progress: Episode {OldEpisode} -> {NewEpisode} (unmarked highest episode)",
                                     malEpisodeCount, newEpisodeCount);
                             }
                             else if (!rollbackEnabled && shokoEpisodeNumber == malEpisodeCount && malEpisodeCount > 0)
@@ -501,37 +506,31 @@ namespace Shoko.AniSync
                         {
                             _logger.LogInformation("Updating MAL status for {Title}: Episodes: {Episodes}, Status: {Status}, Rewatching: {Rewatching}",
                                 anime.Title ?? "Unknown", newEpisodeCount, newStatus?.ToString() ?? "unchanged", setRewatching?.ToString() ?? "unchanged");
-                            
+
                             // Call UpdateAnime with the appropriate status
                             UpdateAnimeStatusResponse? updateResult = null;
-                            
+
                             // Determine which status to use: new status if changed, otherwise keep current
                             var statusToUse = newStatus ?? currentStatus;
-                            
+
                             // Add date tracking
                             DateTime? startDate = null;
                             DateTime? endDate = null;
-                            
+
                             // Set start date based on user preference
-                            // If SetStartDateFromAnyEpisode is true, set start date when watching any episode for the first time
-                            // If false (default), only set start date when watching episode 1
-                            bool setFromAnyEpisode = Plugin.Instance?.Config.GetSetStartDateFromAnyEpisode(shokoUser?.Username) ?? false;
-                            
+                            bool setFromAnyEpisode = config.GetSetStartDateFromAnyEpisode(shokoUser?.Username);
+
                             if (malEpisodeCount == 0 && newEpisodeCount > 0)
                             {
-                                // Check if we should set the start date based on the setting
-                                // Default (false): only set from episode 1
-                                // When enabled (true): set from any episode
                                 bool shouldSetStartDate = setFromAnyEpisode || newEpisodeCount == 1;
-                                
+
                                 if (shouldSetStartDate)
                                 {
-                                    // Check if we already have dates in MAL before overwriting
                                     var existingStartDate = animeWithStatus?.MyListStatus?.StartDate;
                                     if (string.IsNullOrEmpty(existingStartDate))
                                     {
                                         startDate = DateTime.Now.Date;
-                                        _logger.LogInformation("Setting start date to {Date} for {Title} (started at episode {Episode})", 
+                                        _logger.LogInformation("Setting start date to {Date} for {Title} (started at episode {Episode})",
                                             startDate.Value.ToString("yyyy-MM-dd"), anime.Title, newEpisodeCount);
                                     }
                                     else
@@ -541,32 +540,28 @@ namespace Shoko.AniSync
                                 }
                                 else
                                 {
-                                    _logger.LogInformation("Not setting start date for {Title} - started watching from episode {Episode} (SetStartDateFromAnyEpisode is disabled)", 
+                                    _logger.LogInformation("Not setting start date for {Title} - started watching from episode {Episode} (SetStartDateFromAnyEpisode is disabled)",
                                         anime.Title, newEpisodeCount);
                                 }
                             }
-                            
+
                             // Clear dates when completely unwatching (going to 0 episodes)
                             if (newEpisodeCount == 0 && malEpisodeCount > 0)
                             {
-                                // Send empty string to clear the dates in MAL
-                                startDate = DateTime.MinValue; // This will be handled specially in the API call
+                                startDate = DateTime.MinValue;
                                 endDate = DateTime.MinValue;
                                 _logger.LogInformation("Clearing start and end dates for {Title} (unwatched completely)", anime.Title);
                             }
-                            
+
                             // When starting a rewatch, preserve the original dates
                             if (setRewatching == true && currentStatus == Status.Completed)
                             {
-                                // Don't touch the dates - they should remain as the original watch dates
                                 _logger.LogInformation("Starting rewatch for {Title}, preserving original dates", anime.Title);
                             }
-                            
+
                             // Set end date if completing the series for the first time (not during rewatch)
                             if (newStatus == Status.Completed && currentStatus != Status.Completed)
                             {
-                                // Only set end date if this is the first completion, not a rewatch completion
-                                // If the anime already has an end date, it means it was completed before (this is a rewatch)
                                 var existingEndDate = animeWithStatus?.MyListStatus?.FinishDate;
                                 if (string.IsNullOrEmpty(existingEndDate))
                                 {
@@ -578,14 +573,14 @@ namespace Shoko.AniSync
                                     _logger.LogInformation("Preserving original end date {Date} for {Title} (rewatch completion)", existingEndDate, anime.Title);
                                 }
                             }
-                            
+
                             // Clear end date when rolling back from completed
                             if (currentStatus == Status.Completed && newStatus == Status.Watching)
                             {
-                                endDate = DateTime.MinValue; // This will be handled specially to clear the date
+                                endDate = DateTime.MinValue;
                                 _logger.LogInformation("Clearing end date for {Title} (rolled back from completed)", anime.Title);
                             }
-                            
+
                             updateResult = await apiCallHelpers.UpdateAnime(
                                 anime.Id,
                                 newEpisodeCount,
@@ -597,15 +592,15 @@ namespace Shoko.AniSync
                                 alternativeId: anime.AlternativeId,
                                 shokoUsername: shokoUser?.Username
                             );
-                            
+
                             if (updateResult != null)
                             {
                                 _logger.LogInformation("Successfully updated MAL status for {Title}", anime.Title);
-                                
+
                                 // Log to sync history
                                 SyncAction syncAction = SyncAction.Updated;
                                 string? details = null;
-                                
+
                                 if (newStatus == Status.Completed)
                                 {
                                     syncAction = SyncAction.Completed;
@@ -625,7 +620,7 @@ namespace Shoko.AniSync
                                 else if (newEpisodeCount == 0)
                                 {
                                     syncAction = SyncAction.Unwatched;
-                                    details = null;  // No need for redundant details
+                                    details = null;
                                 }
                                 else if (newEpisodeCount < malEpisodeCount)
                                 {
@@ -638,16 +633,16 @@ namespace Shoko.AniSync
                                     if (startDate.HasValue && startDate.Value != DateTime.MinValue)
                                         details = "Set start date";
                                 }
-                                
+
                                 SyncHistory?.LogSync(
                                     shokoUser?.Username ?? "Unknown User",
                                     anime.Id,
                                     anime.Title ?? "Unknown",
-                                    shokoEpisodeNumber,  // Use actual episode number
+                                    shokoEpisodeNumber,
                                     SyncActionHelper.GetActionText(syncAction),
                                     true,
-                                    statusToUse,  // Pass the actual MAL status
-                                    Plugin.Instance?.Config.SelectedProvider.ToString() ?? "Mal",  // Provider name from config
+                                    statusToUse,
+                                    config.SelectedProvider.ToString(),
                                     GetEpisodeThumbnailUrl(maxEpisode, anime),
                                     userAuth?.Username ?? "Unknown MAL User"
                                 );
@@ -655,10 +650,6 @@ namespace Shoko.AniSync
                             else
                             {
                                 _logger.LogError("Failed to update MAL status for {Title}", anime.Title);
-                                
-                                // Log failure to sync history
-                                // On failure, we don't log to history since sync didn't succeed
-                                // The MAL status remains unchanged
                             }
                         }
                     }
@@ -668,15 +659,15 @@ namespace Shoko.AniSync
                         if (isWatched)
                         {
                             _logger.LogInformation("Adding {Title} to MAL list with episode {Episode}", anime.Title, shokoEpisodeNumber);
-                            
-                            var newStatus = (anime.NumEpisodes > 0 && shokoEpisodeNumber >= anime.NumEpisodes) 
-                                ? Status.Completed 
+
+                            var newStatus = (anime.NumEpisodes > 0 && shokoEpisodeNumber >= anime.NumEpisodes)
+                                ? Status.Completed
                                 : Status.Watching;
-                            
+
                             // Set dates when adding anime to list
                             DateTime? startDate = DateTime.Now.Date;
                             DateTime? endDate = null;
-                            
+
                             // If completing on first watch, set both start and end date
                             if (newStatus == Status.Completed)
                             {
@@ -687,27 +678,27 @@ namespace Shoko.AniSync
                             {
                                 _logger.LogInformation("Setting start date to {Date} for {Title}", startDate.Value.ToString("yyyy-MM-dd"), anime.Title);
                             }
-                            
+
                             var updateResult = await apiCallHelpers.UpdateAnime(
-                                anime.Id, 
-                                shokoEpisodeNumber, 
+                                anime.Id,
+                                shokoEpisodeNumber,
                                 newStatus,
                                 startDate: startDate,
                                 endDate: endDate,
                                 alternativeId: anime.AlternativeId,
                                 shokoUsername: shokoUser?.Username
                             );
-                            
+
                             if (updateResult != null)
                             {
                                 _logger.LogInformation("Successfully added {Title} to MAL list", anime.Title);
-                                
+
                                 // Log to sync history
                                 SyncAction syncAction = newStatus == Status.Completed ? SyncAction.Completed : SyncAction.AddedToList;
-                                string? details = newStatus == Status.Completed 
-                                    ? "First time completion" 
+                                string? details = newStatus == Status.Completed
+                                    ? "First time completion"
                                     : null;
-                                
+
                                 SyncHistory?.LogSync(
                                     shokoUser?.Username ?? "Unknown User",
                                     anime.Id,
@@ -715,8 +706,8 @@ namespace Shoko.AniSync
                                     shokoEpisodeNumber,
                                     SyncActionHelper.GetActionText(syncAction),
                                     true,
-                                    newStatus,  // Pass the actual MAL status for new anime
-                                    Plugin.Instance?.Config.SelectedProvider.ToString() ?? "Mal",  // Provider name from config
+                                    newStatus,
+                                    config.SelectedProvider.ToString(),
                                     GetEpisodeThumbnailUrl(maxEpisode, anime),
                                     userAuth?.Username ?? "Unknown MAL User"
                                 );
@@ -724,10 +715,6 @@ namespace Shoko.AniSync
                             else
                             {
                                 _logger.LogError("Failed to add {Title} to MAL list", anime.Title);
-                                
-                                // Log failure to sync history
-                                // On failure, we don't log to history since sync didn't succeed
-                                // The anime was not added to MAL
                             }
                         }
                         else

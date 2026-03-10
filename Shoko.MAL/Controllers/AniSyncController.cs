@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using Shoko.Abstractions.Config;
 using Shoko.AniSync.Api;
 using Shoko.AniSync.Configuration;
 using Shoko.AniSync.Interfaces;
@@ -34,9 +35,9 @@ namespace Shoko.AniSync.Controllers
         private readonly ILogger<AniSyncController> _logger;
         private readonly IMemoryCache _memoryCache;
         private readonly IAsyncDelayer _delayer;
-        // Shoko Services - these might need to be optional as they may not be available to plugins
-        private readonly IUserDataService _userDataService; // IUserDataService
-        private readonly IUserService _userService; // IUserService
+        private readonly ConfigurationProvider<Config> _configProvider;
+        private readonly IUserDataService _userDataService;
+        private readonly IUserService _userService;
 
         private string ShokoApiBaseUrl
         {
@@ -60,7 +61,7 @@ namespace Shoko.AniSync.Controllers
             }
         }
 
-        public AniSyncController(IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory, IHttpContextAccessor httpContextAccessor, IApplicationPaths applicationPaths, IMemoryCache memoryCache, IUserDataService userDataService, IUserService userService)
+        public AniSyncController(IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory, IHttpContextAccessor httpContextAccessor, IApplicationPaths applicationPaths, IMemoryCache memoryCache, IUserDataService userDataService, IUserService userService, ConfigurationProvider<Config> configProvider)
         {
             _httpClientFactory = httpClientFactory;
             _httpContextAccessor = httpContextAccessor;
@@ -71,6 +72,7 @@ namespace Shoko.AniSync.Controllers
             _delayer = new Delayer();
             _userDataService = userDataService;
             _userService = userService;
+            _configProvider = configProvider;
         }
 
         [HttpGet]
@@ -78,7 +80,7 @@ namespace Shoko.AniSync.Controllers
         public string BuildAuthorizeRequestUrl(ApiName provider, string? state = null, string? baseUrl = null)
         {
             var effectiveBaseUrl = baseUrl ?? ShokoApiBaseUrl;
-            return new ApiAuthentication(provider, _httpClientFactory, _loggerFactory, _memoryCache, effectiveBaseUrl).BuildAuthorizeRequestUrl(state);
+            return new ApiAuthentication(provider, _httpClientFactory, _loggerFactory, _configProvider, _applicationPaths, _memoryCache, effectiveBaseUrl).BuildAuthorizeRequestUrl(state);
         }
 
         [HttpGet]
@@ -137,7 +139,7 @@ namespace Shoko.AniSync.Controllers
 
                 var effectiveBaseUrl = callbackBaseUrl ?? ShokoApiBaseUrl;
                 _logger.LogInformation("Authenticating MAL for Shoko user: {ShokoUsername} with baseUrl: {BaseUrl}", shokoUsername, effectiveBaseUrl);
-                new ApiAuthentication(provider, _httpClientFactory, _loggerFactory, _memoryCache, effectiveBaseUrl).GetToken(code, shokoUsername: shokoUsername, state: state);
+                new ApiAuthentication(provider, _httpClientFactory, _loggerFactory, _configProvider, _applicationPaths, _memoryCache, effectiveBaseUrl).GetToken(code, shokoUsername: shokoUsername, state: state);
 
                 return Redirect("/anisync?success=connected");
             }
@@ -207,26 +209,26 @@ namespace Shoko.AniSync.Controllers
             // Get Shoko username from query or API
             var shokoUsername = GetCurrentShokoUser();
             
-            var config = Config.GetConfig(_applicationPaths);
+            var config = _configProvider.Load();
             
             // If we got null, try to use first user from config
-            if (string.IsNullOrEmpty(shokoUsername) && config?.Any() == true)
+            if (string.IsNullOrEmpty(shokoUsername) && config?.Users.Any() == true)
             {
-                shokoUsername = config.Keys.FirstOrDefault();
+                shokoUsername = config.Users.Keys.FirstOrDefault();
                 _logger.LogInformation("Using authenticated user from config: {Username}", shokoUsername);
             }
             
             // Auto-populate user config if user exists but not in config
-            if (!string.IsNullOrEmpty(shokoUsername) && config != null && !config.ContainsKey(shokoUsername))
+            if (!string.IsNullOrEmpty(shokoUsername) && config != null && !config.Users.ContainsKey(shokoUsername))
             {
                 _logger.LogInformation("Auto-creating config entry for user: {Username}", shokoUsername);
-                config[shokoUsername] = new UserConfig
+                config.Users[shokoUsername] = new UserConfig
                 {
                     Providers = new Dictionary<string, ProviderAuth>(),
                     Settings = UserSettings.CreateWithDefaults(),
                     SelectedProvider = "Mal"
                 };
-                config.Save();
+                _configProvider.Save(config);
             }
             
             if (string.IsNullOrEmpty(shokoUsername))
@@ -263,26 +265,26 @@ namespace Shoko.AniSync.Controllers
             // Get Shoko username from query or API
             var shokoUsername = GetCurrentShokoUser();
             
-            var config = Config.GetConfig(_applicationPaths);
+            var config = _configProvider.Load();
             
             // If we got null, try to use first user from config
-            if (string.IsNullOrEmpty(shokoUsername) && config?.Any() == true)
+            if (string.IsNullOrEmpty(shokoUsername) && config?.Users.Any() == true)
             {
-                shokoUsername = config.Keys.FirstOrDefault();
+                shokoUsername = config.Users.Keys.FirstOrDefault();
                 _logger.LogInformation("Using authenticated user from config: {Username}", shokoUsername);
             }
             
             // Auto-populate user config if user exists but not in config
-            if (!string.IsNullOrEmpty(shokoUsername) && config != null && !config.ContainsKey(shokoUsername))
+            if (!string.IsNullOrEmpty(shokoUsername) && config != null && !config.Users.ContainsKey(shokoUsername))
             {
                 _logger.LogInformation("Auto-creating config entry for user: {Username}", shokoUsername);
-                config[shokoUsername] = new UserConfig
+                config.Users[shokoUsername] = new UserConfig
                 {
                     Providers = new Dictionary<string, ProviderAuth>(),
                     Settings = UserSettings.CreateWithDefaults(),
                     SelectedProvider = "Mal"
                 };
-                config.Save();
+                _configProvider.Save(config);
             }
             
             // If we still got null, it means there's no apikey header - show settings auth page
@@ -330,7 +332,7 @@ namespace Shoko.AniSync.Controllers
                 return Unauthorized(new { error = "Authentication required" });
             }
 
-            var config = Config.GetConfig(_applicationPaths);
+            var config = _configProvider.Load();
 
             _logger.LogInformation("Saving settings for user: {Username}", shokoUsername);
             _logger.LogInformation("Settings model: UpdateNsfw={UpdateNsfw}, EnableAutoSync={EnableAutoSync}", model.UpdateNsfw, model.EnableAutoSync);
@@ -362,26 +364,26 @@ namespace Shoko.AniSync.Controllers
             // Get Shoko username from query or API
             var shokoUsername = GetCurrentShokoUser();
             
-            var config = Config.GetConfig(_applicationPaths);
+            var config = _configProvider.Load();
             
             // If we got null, try to use first user from config
-            if (string.IsNullOrEmpty(shokoUsername) && config?.Any() == true)
+            if (string.IsNullOrEmpty(shokoUsername) && config?.Users.Any() == true)
             {
-                shokoUsername = config.Keys.FirstOrDefault();
+                shokoUsername = config.Users.Keys.FirstOrDefault();
                 _logger.LogInformation("Using authenticated user from config: {Username}", shokoUsername);
             }
             
             // Auto-populate user config if user exists but not in config
-            if (!string.IsNullOrEmpty(shokoUsername) && config != null && !config.ContainsKey(shokoUsername))
+            if (!string.IsNullOrEmpty(shokoUsername) && config != null && !config.Users.ContainsKey(shokoUsername))
             {
                 _logger.LogInformation("Auto-creating config entry for user: {Username}", shokoUsername);
-                config[shokoUsername] = new UserConfig
+                config.Users[shokoUsername] = new UserConfig
                 {
                     Providers = new Dictionary<string, ProviderAuth>(),
                     Settings = UserSettings.CreateWithDefaults(),
                     SelectedProvider = "Mal"
                 };
-                config.Save();
+                _configProvider.Save(config);
             }
             
             if (string.IsNullOrEmpty(shokoUsername))
@@ -424,16 +426,6 @@ namespace Shoko.AniSync.Controllers
             var state = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(stateJson));
             _logger.LogInformation("Starting OAuth flow for user: {Username}", currentUser);
             
-            // Also try to store in session as backup
-            try
-            {
-                HttpContext.Session?.SetString("PendingAuthUser", currentUser);
-            }
-            catch (InvalidOperationException)
-            {
-                _logger.LogDebug("Session not configured, relying on state parameter");
-            }
-            
             var authUrl = BuildAuthorizeRequestUrl(ApiName.Mal, state);
             return Redirect(authUrl);
         }
@@ -443,17 +435,17 @@ namespace Shoko.AniSync.Controllers
         [Route("Logout")]
         public IActionResult Logout()
         {
-            var config = Config.GetConfig(_applicationPaths);
+            var config = _configProvider.Load();
             var currentUser = GetCurrentShokoUser();
             
-            if (!string.IsNullOrEmpty(currentUser) && config?.ContainsKey(currentUser) == true)
+            if (!string.IsNullOrEmpty(currentUser) && config?.Users.ContainsKey(currentUser) == true)
             {
-                var userConfig = config[currentUser];
+                var userConfig = config.Users[currentUser];
                 // Remove the MAL auth for the current user
                 if (userConfig?.Providers?.ContainsKey("Mal") == true)
                 {
                     userConfig.Providers.Remove("Mal");
-                    config.Save();
+                    _configProvider.Save(config);
                 }
             }
             
@@ -478,7 +470,7 @@ namespace Shoko.AniSync.Controllers
                     return RedirectToAction("Index");
                 }
                 
-                var auth = new ApiAuthentication(ApiName.Mal, _httpClientFactory, _loggerFactory, _memoryCache);
+                var auth = new ApiAuthentication(ApiName.Mal, _httpClientFactory, _loggerFactory, _configProvider, _applicationPaths, _memoryCache);
                 await auth.RefreshAccessToken(shokoUsername);
                 
                 // TempData["SuccessMessage"] = "Connection refreshed successfully!";
@@ -712,7 +704,7 @@ namespace Shoko.AniSync.Controllers
                 return Unauthorized(new { error = "Authentication required" });
             }
 
-            var gs = GlobalSettings.Load();
+            var gs = GlobalSettings.Load(_applicationPaths);
             // Bug 6 fix: handle short secrets safely
             string maskedSecret;
             var secret = gs?.MalClientSecret;
@@ -743,7 +735,7 @@ namespace Shoko.AniSync.Controllers
             if (request == null)
                 return BadRequest(new { error = "Invalid request body" });
 
-            var existing = GlobalSettings.Load();
+            var existing = GlobalSettings.Load(_applicationPaths);
 
             // If the incoming secret is the masked version (starts with *), keep the existing secret
             var effectiveSecret = request.MalClientSecret;
@@ -761,15 +753,15 @@ namespace Shoko.AniSync.Controllers
                 MalClientId = request.MalClientId,
                 MalClientSecret = effectiveSecret
             };
-            gs.Save();
+            gs.Save(_applicationPaths);
 
             bool reAuthRequired = false;
             if (credentialsChanged)
             {
                 // Clear all MAL provider auth since tokens are tied to the old app credentials
-                var config = Config.GetConfig(_applicationPaths);
+                var config = _configProvider.Load();
                 bool anyCleared = false;
-                foreach (var kvp in config)
+                foreach (var kvp in config.Users)
                 {
                     if (kvp.Value?.Providers?.ContainsKey("Mal") == true)
                     {
@@ -779,7 +771,7 @@ namespace Shoko.AniSync.Controllers
                 }
                 if (anyCleared)
                 {
-                    config.Save();
+                    _configProvider.Save(config);
                     reAuthRequired = true;
                     _logger.LogInformation("Cleared MAL auth for all users due to credential change");
                 }
@@ -1043,7 +1035,7 @@ namespace Shoko.AniSync.Controllers
             string navbar;
             if (isAuthenticated)
             {
-                var config = Config.GetConfig(_applicationPaths);
+                var config = _configProvider.Load();
                 var users = config.GetAuthenticatedUsers();
                 var userOptions = new StringBuilder();
                 
@@ -1084,7 +1076,7 @@ namespace Shoko.AniSync.Controllers
             var content = LoadEmbeddedResource("settings.html");
             
             _logger.LogInformation("GetSettingsHtml called with shokoUsername: {ShokoUsername}", shokoUsername);
-            _logger.LogInformation("Config keys: {ConfigKeys}", config != null ? string.Join(", ", config.Keys) : "null");
+            _logger.LogInformation("Config keys: {ConfigKeys}", config != null ? string.Join(", ", config.Users.Keys) : "null");
             
             // Get user-specific settings if available
             bool updateNsfw = config?.GetUpdateNsfw(shokoUsername) ?? false;
@@ -1101,7 +1093,7 @@ namespace Shoko.AniSync.Controllers
             bool enableDebugLogging = config?.GetEnableDebugLogging(shokoUsername) ?? false;
             
             // Check if user has custom settings (from the new config structure) 
-            bool hasUserSettings = config != null && config.ContainsKey(shokoUsername) && config[shokoUsername]?.Settings != null;
+            bool hasUserSettings = config != null && config.Users.ContainsKey(shokoUsername) && config.Users[shokoUsername]?.Settings != null;
             
             // Replace placeholders with actual values
             content = content
