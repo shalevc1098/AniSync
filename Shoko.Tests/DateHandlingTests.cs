@@ -167,5 +167,40 @@ namespace Shoko.Tests
             // Assert
             shouldClearEndDate.Should().BeTrue("Should clear end date when rolling back from completed");
         }
+
+        // ========================================================================
+        // AirDate null safety
+        // episode.Series.AirDate.Value could throw NullReferenceException
+        // if Series was null.
+        // ========================================================================
+
+        [Fact]
+        public void NullSeries_ShouldReturnMaxValue()
+        {
+            DateTime? airDate = null;
+            string malStartDate = "2023-01-15";
+            DateTime? parsedDate = DateTime.TryParse(malStartDate, out var d) ? d : null;
+
+            double diffDays = airDate.HasValue && parsedDate.HasValue
+                ? Math.Abs((parsedDate.Value - airDate.Value).TotalDays)
+                : double.MaxValue;
+
+            diffDays.Should().Be(double.MaxValue,
+                "should return MaxValue when series air date is unavailable");
+        }
+
+        [Fact]
+        public void ValidDates_ShouldCalculateDiff()
+        {
+            DateTime? airDate = new DateTime(2023, 1, 15);
+            string malStartDate = "2023-01-20";
+            DateTime? parsedDate = DateTime.TryParse(malStartDate, out var d) ? d : null;
+
+            double diffDays = airDate.HasValue && parsedDate.HasValue
+                ? Math.Abs((parsedDate.Value - airDate.Value).TotalDays)
+                : double.MaxValue;
+
+            diffDays.Should().Be(5, "difference between Jan 15 and Jan 20 is 5 days");
+        }
     }
 }

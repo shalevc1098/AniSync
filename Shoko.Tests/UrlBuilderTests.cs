@@ -93,4 +93,20 @@ public class UrlBuilderTests
         // Assert
         result.Should().Be("https://api.example.com/endpoint?limit=10&offset=20");
     }
+
+    // ========================================================================
+    // Duplicate parameters (UrlBuilder uses a List, so duplicates are allowed)
+    // ========================================================================
+
+    [Fact]
+    public void Build_Should_Handle_Duplicate_Key_Value_Pairs()
+    {
+        var urlBuilder = new UrlBuilder { Base = "https://api.example.com/endpoint" };
+        urlBuilder.Parameters.Add(new KeyValuePair<string, string>("key", "val"));
+        urlBuilder.Parameters.Add(new KeyValuePair<string, string>("key", "val"));
+
+        var result = urlBuilder.Build();
+
+        result.Should().Be("https://api.example.com/endpoint?key=val&key=val");
+    }
 }

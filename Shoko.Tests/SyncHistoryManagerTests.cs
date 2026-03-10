@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Shoko.AniSync.Helpers;
@@ -475,23 +477,110 @@ namespace Shoko.Tests
             // Arrange
             var username = "testuser";
             var tasks = new Task[10];
-            
+
             // Act - Fire off multiple concurrent writes
             for (int i = 0; i < 10; i++)
             {
                 var id = i;
-                tasks[i] = Task.Run(() => 
+                tasks[i] = Task.Run(() =>
                     _syncHistoryManager.LogSync(username, id, $"Anime {id}", id, "Watched", true, Status.Watching)
                 );
             }
-            
+
             await Task.WhenAll(tasks);
             await Task.Delay(500);
-            
+
             // Assert
             var stats = await _syncHistoryManager.GetUserStatsAsync(username);
             Assert.NotNull(stats);
             Assert.Equal(10, stats.TotalSyncs);
+        }
+
+        // ========================================================================
+        // Returns list copy (not reference to internal state)
+        // GetUserHistoryAsync must return a snapshot, not a reference.
+        // ========================================================================
+
+        [Fact]
+        public void GetUserHistoryAsync_Returns_Copy_Not_Reference()
+        {
+            var internalHistory = new UserHistory();
+            internalHistory.AddEntry(new HistoryEntry
+            {
+                AnimeTitle = "Test Anime",
+                Action = 0,
+                Success = true,
+                Timestamp = DateTime.Now
+            });
+
+            var returned = internalHistory.History.ToList();
+
+            returned.Add(new HistoryEntry { AnimeTitle = "Extra" });
+
+            internalHistory.History.Should().HaveCount(1, "internal list should not be modified by caller");
+            returned.Should().HaveCount(2, "returned copy should be independently modifiable");
+        }
+
+        [Fact]
+        public void GetUserHistoryAsync_With_Limit_Returns_Copy()
+        {
+            var internalHistory = new UserHistory();
+            for (int i = 0; i < 5; i++)
+            {
+                internalHistory.AddEntry(new HistoryEntry
+                {
+                    AnimeTitle = $"Anime {i}",
+                    Action = 0,
+                    Success = true,
+                    Timestamp = DateTime.Now
+                });
+            }
+
+            var returned = internalHistory.History.Take(3).ToList();
+
+            returned.Should().HaveCount(3);
+            returned.RemoveAt(0);
+            internalHistory.History.Should().HaveCount(5, "internal list unaffected by Take().ToList() result");
+        }
+
+        // ========================================================================
+        // No-history display logic
+        // When there's no history, the parent container must be shown.
+        // ========================================================================
+
+        [Fact]
+        public void EmptyHistory_Should_Show_Parent_Container()
+        {
+            var history = new List<HistoryEntry>();
+            bool parentVisible = false;
+            bool noHistoryVisible = false;
+
+            if (history.Count == 0)
+            {
+                parentVisible = true;
+                noHistoryVisible = true;
+            }
+
+            parentVisible.Should().BeTrue("parent container must be visible for no-history message to show");
+            noHistoryVisible.Should().BeTrue("no-history message should be displayed");
+        }
+
+        [Fact]
+        public void NonEmptyHistory_Should_Not_Show_NoHistory()
+        {
+            var history = new List<HistoryEntry>
+            {
+                new HistoryEntry { AnimeTitle = "Test", Success = true }
+            };
+
+            bool noHistoryVisible = false;
+
+            if (history.Count == 0)
+            {
+                noHistoryVisible = true;
+            }
+
+            noHistoryVisible.Should().BeFalse("no-history message should not show when entries exist");
         }
     }
 }

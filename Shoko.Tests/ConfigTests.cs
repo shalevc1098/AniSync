@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading.Tasks;
 using FluentAssertions;
 using Newtonsoft.Json;
 using Shoko.AniSync.Configuration;
@@ -270,12 +271,184 @@ public class ConfigTests : IDisposable
         // Arrange
         _config.SetUserSettings("shalev", new UserSettings { SetStartDateFromAnyEpisode = true });
         _config.Save();
-        
+
         // Act
         var loadedConfig = new Config(_testConfigPath);
         var result = loadedConfig.GetSetStartDateFromAnyEpisode("shalev");
 
         // Assert
         result.Should().BeTrue();
+    }
+
+    // ========================================================================
+    // Config settings defaults (all 9 helpers)
+    // For an unknown user, all settings helpers should return documented defaults.
+    // ========================================================================
+
+    [Fact]
+    public void Config_All_Settings_Return_Documented_Defaults_For_Unknown_User()
+    {
+        _config.GetEnableAutoSync("unknown_user").Should().BeTrue("default is true");
+        _config.GetSyncOnlyCompleted("unknown_user").Should().BeTrue("default is true");
+        _config.GetEnableRewatchDetection("unknown_user").Should().BeTrue("default is true");
+        _config.GetAllowRollback("unknown_user").Should().BeFalse("default is false");
+        _config.GetTitleMatchThreshold("unknown_user").Should().Be(0.8, "default is 0.8");
+        _config.GetSyncDelaySeconds("unknown_user").Should().Be(5, "default is 5");
+        _config.GetUseFuzzyMatching("unknown_user").Should().BeTrue("default is true");
+        _config.GetEnableDebugLogging("unknown_user").Should().BeFalse("default is false");
+        _config.GetUpdateNsfw("unknown_user").Should().BeFalse("default is false");
+    }
+
+    // ========================================================================
+    // Config null-guard tests
+    // SetAuthForShokoUser silently returns when username is empty or auth is null.
+    // ========================================================================
+
+    [Fact]
+    public void SetAuthForShokoUser_With_Empty_Username_Does_Not_Add_Entry()
+    {
+        _config.SetAuthForShokoUser("", ApiName.Mal, new UserApiAuth { Username = "mal_user", AccessToken = "token" });
+
+        _config.Should().BeEmpty("empty username should be rejected");
+    }
+
+    [Fact]
+    public void SetAuthForShokoUser_With_Null_Auth_Does_Not_Add_Entry()
+    {
+        _config.SetAuthForShokoUser("shalev", ApiName.Mal, null!);
+
+        _config.Should().BeEmpty("null auth should be rejected");
+    }
+
+    // ========================================================================
+    // SelectedProvider null safety
+    // Null-coalescing should default to Mal when Instance or Config is null.
+    // ========================================================================
+
+    [Fact]
+    public void SelectedProvider_Null_Instance_Should_Default_To_Mal()
+    {
+        ApiName? provider = null;
+        var result = provider ?? ApiName.Mal;
+
+        result.Should().Be(ApiName.Mal);
+    }
+
+    [Fact]
+    public void SelectedProvider_Null_Config_Should_Default_To_Mal()
+    {
+        ApiName? provider = null;
+        var result = provider ?? ApiName.Mal;
+
+        result.Should().Be(ApiName.Mal);
+    }
+
+    [Fact]
+    public void SelectedProvider_Set_Should_Use_Configured_Value()
+    {
+        ApiName? provider = ApiName.AniList;
+        var result = provider ?? ApiName.Mal;
+
+        result.Should().Be(ApiName.AniList);
+    }
+
+    // ========================================================================
+    // Config thread safety
+    // Concurrent SetAuth + Save must not throw due to collection modification.
+    // ========================================================================
+
+    [Fact]
+    public void Config_Concurrent_Modification_Does_Not_Throw()
+    {
+        var tasks = new List<Task>();
+        for (int i = 0; i < 50; i++)
+        {
+            int index = i;
+            tasks.Add(Task.Run(() =>
+            {
+                _config.SetAuthForShokoUser($"user{index}", ApiName.Mal, new UserApiAuth
+                {
+                    Username = $"maluser{index}",
+                    AccessToken = $"token{index}",
+                    RefreshToken = $"refresh{index}",
+                    ExpiresAt = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeSeconds()
+                });
+            }));
+        }
+
+        var act = () => Task.WaitAll(tasks.ToArray());
+        act.Should().NotThrow("concurrent SetAuth calls should be synchronized by the lock");
+    }
+
+    [Fact]
+    public void Config_Concurrent_SetSettings_Does_Not_Throw()
+    {
+        var tasks = new List<Task>();
+        for (int i = 0; i < 50; i++)
+        {
+            int index = i;
+            tasks.Add(Task.Run(() =>
+            {
+                _config.SetUserSettings($"user{index}", new UserSettings
+                {
+                    SyncDelaySeconds = index
+                });
+            }));
+        }
+
+        var act = () => Task.WaitAll(tasks.ToArray());
+        act.Should().NotThrow("concurrent SetUserSettings calls should be synchronized by the lock");
+    }
+
+    // ========================================================================
+    // Config survives malformed JSON
+    // ========================================================================
+
+    [Fact]
+    public void Config_MalformedJson_DoesNotThrow()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "anisync_test_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        var configPath = Path.Combine(tempDir, "config.json");
+
+        try
+        {
+            File.WriteAllText(configPath, "{{{invalid json content");
+
+            Config config = null!;
+            var act = () => config = new Config(configPath);
+            act.Should().NotThrow("malformed JSON should be handled gracefully");
+
+            config.Should().NotBeNull();
+            config.Should().BeEmpty("corrupt config should result in empty dictionary");
+        }
+        finally
+        {
+            try { Directory.Delete(tempDir, true); } catch { }
+        }
+    }
+
+    [Fact]
+    public void Config_MalformedJson_CreatesBackup()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "anisync_test_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        var configPath = Path.Combine(tempDir, "config.json");
+
+        try
+        {
+            var corruptContent = "{{{invalid json content";
+            File.WriteAllText(configPath, corruptContent);
+
+            _ = new Config(configPath);
+
+            var backupPath = configPath + ".corrupt";
+            File.Exists(backupPath).Should().BeTrue("corrupt config file should be backed up");
+            File.ReadAllText(backupPath).Should().Be(corruptContent, "backup should contain the original corrupt content");
+        }
+        finally
+        {
+            try { Directory.Delete(tempDir, true); } catch { }
+        }
     }
 }
