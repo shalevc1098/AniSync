@@ -9,8 +9,8 @@ using Shoko.AniSync.Interfaces;
 using Shoko.AniSync.Models.ViewModels;
 using Shoko.AniSync.Models.Mal;
 using Shoko.MAL.Models;
-using Shoko.Plugin.Abstractions;
-using Shoko.Plugin.Abstractions.Services;
+using Shoko.Abstractions.Plugin;
+using Shoko.Abstractions.Services;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -636,17 +636,9 @@ namespace Shoko.AniSync.Controllers
         
         private object? TryGetUserWatchData(int userID, int videoID)
         {
-            try
-            {
-                if (_userDataService != null)
-                {
-                    return _userDataService.GetVideoUserData(userID, videoID);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to get user watch data for user {UserID}, video {VideoID}", userID, videoID);
-            }
+            // GetVideoUserData now requires IVideo and IUser objects instead of IDs
+            // This debug method cannot easily resolve those from int IDs
+            _logger.LogDebug("TryGetUserWatchData called with userID={UserID}, videoID={VideoID} - not supported in new API", userID, videoID);
             return null;
         }
         

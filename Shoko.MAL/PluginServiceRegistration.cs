@@ -1,7 +1,7 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Shoko.AniSync.Controllers;
-using Shoko.Plugin.Abstractions;
+using Shoko.Abstractions.Plugin;
 using System;
 using System.Reflection;
 

@@ -11,11 +11,11 @@ using Shoko.AniSync;
 using Shoko.AniSync.Helpers;
 using Shoko.AniSync.Interfaces;
 using Shoko.AniSync.Models.Mal;
-using Shoko.Plugin.Abstractions;
-using Shoko.Plugin.Abstractions.DataModels;
-using Shoko.Plugin.Abstractions.DataModels.Shoko;
-using Shoko.Plugin.Abstractions.Events;
-using Shoko.Plugin.Abstractions.Services;
+using Shoko.Abstractions.Plugin;
+using Shoko.Abstractions.Metadata;
+using Shoko.Abstractions.Metadata.Shoko;
+using Shoko.Abstractions.Events;
+using Shoko.Abstractions.Services;
 using Xunit;
 
 namespace Shoko.Tests;
@@ -23,37 +23,37 @@ namespace Shoko.Tests;
 public class ShokoAniSyncPluginTests
 {
     [Fact]
-    public async Task StartAsync_Should_Subscribe_To_VideoUserDataSaved_Event()
+    public async Task StartAsync_Should_Subscribe_To_EpisodeUserDataSaved_Event()
     {
         // Arrange
         var userDataServiceMock = new Mock<IUserDataService>();
         var plugin = CreatePlugin(userDataServiceMock: userDataServiceMock);
         var cancellationToken = CancellationToken.None;
-        
+
         // Act
         await ((IHostedService)plugin).StartAsync(cancellationToken);
-        
+
         // Assert
         userDataServiceMock.VerifyAdd(
-            x => x.VideoUserDataSaved += It.IsAny<EventHandler<VideoUserDataSavedEventArgs>>(),
+            x => x.EpisodeUserDataSaved += It.IsAny<EventHandler<EpisodeUserDataSavedEventArgs>>(),
             Times.Once);
     }
 
     [Fact]
-    public async Task StopAsync_Should_Unsubscribe_From_VideoUserDataSaved_Event()
+    public async Task StopAsync_Should_Unsubscribe_From_EpisodeUserDataSaved_Event()
     {
         // Arrange
         var userDataServiceMock = new Mock<IUserDataService>();
         var plugin = CreatePlugin(userDataServiceMock: userDataServiceMock);
         var cancellationToken = CancellationToken.None;
         await ((IHostedService)plugin).StartAsync(cancellationToken);
-        
+
         // Act
         await ((IHostedService)plugin).StopAsync(cancellationToken);
-        
+
         // Assert
         userDataServiceMock.VerifyRemove(
-            x => x.VideoUserDataSaved -= It.IsAny<EventHandler<VideoUserDataSavedEventArgs>>(),
+            x => x.EpisodeUserDataSaved -= It.IsAny<EventHandler<EpisodeUserDataSavedEventArgs>>(),
             Times.Once);
     }
 
@@ -67,7 +67,7 @@ public class ShokoAniSyncPluginTests
     {
         // Act
         var result = TestHelper.CompareStrings(first, second);
-        
+
         // Assert
         result.Should().Be(expected);
     }
@@ -80,7 +80,7 @@ public class ShokoAniSyncPluginTests
     {
         // Act
         var result = TestHelper.ParseFullDate(dateString);
-        
+
         // Assert
         result.Should().NotBeNull();
         result!.Value.Year.Should().Be(year);
@@ -97,7 +97,7 @@ public class ShokoAniSyncPluginTests
     {
         // Act
         var result = TestHelper.ParseFullDate(dateString);
-        
+
         // Assert
         result.Should().BeNull();
     }
@@ -110,7 +110,7 @@ public class ShokoAniSyncPluginTests
     {
         // Act
         var result = TestHelper.ParseFullDate(dateString);
-        
+
         // Assert
         result.Should().BeNull();
     }
@@ -124,12 +124,12 @@ public class ShokoAniSyncPluginTests
         var memoryCache = new MemoryCache(new MemoryCacheOptions());
         var metadataServiceMock = new Mock<IMetadataService>();
         var applicationPathsMock = new Mock<IApplicationPaths>();
-        
+
         applicationPathsMock.Setup(x => x.PluginsPath).Returns(System.IO.Path.GetTempPath());
-        
+
         loggerFactoryMock.Setup(x => x.CreateLogger(It.IsAny<string>()))
             .Returns(loggerMock.Object);
-        
+
         return new ShokoAniSyncPlugin(
             applicationPathsMock.Object,
             httpClientFactoryMock.Object,
@@ -145,7 +145,7 @@ public static class TestHelper
 {
     public static bool CompareStrings(string first, string second)
     {
-        return String.Compare(first, second, System.Globalization.CultureInfo.CurrentCulture, 
+        return String.Compare(first, second, System.Globalization.CultureInfo.CurrentCulture,
             System.Globalization.CompareOptions.IgnoreCase | System.Globalization.CompareOptions.IgnoreSymbols) == 0;
     }
 

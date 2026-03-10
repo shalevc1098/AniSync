@@ -1,15 +1,17 @@
 ﻿using Microsoft.Extensions.Logging;
 using Shoko.AniSync.Configuration;
-using Shoko.Plugin.Abstractions;
-using Shoko.Plugin.Abstractions.Services;
+using Shoko.Abstractions.Plugin;
 using System;
 using System.Collections.Generic;
 
 namespace Shoko.AniSync
 {
-    public class Plugin : IPlugin, IPluginSettings
+    public class Plugin : IPlugin
     {
+        public Guid ID => new("A1B2C3D4-E5F6-7890-ABCD-EF1234567890");
         public string Name => "AniSync";
+        public string Description => "Syncs watch state from Shoko to MyAnimeList and other providers";
+        public string EmbeddedThumbnailResourceName => string.Empty;
         public static Plugin? Instance { get; private set; }
 
         public Config Config { get; private set; } = null!;
@@ -25,8 +27,5 @@ namespace Shoko.AniSync
 
             loggerFactory.CreateLogger<Plugin>().LogInformation("Plugin loaded");
         }
-
-        public void Load() {}
-        public void OnSettingsLoaded(IPluginSettings settings) {}
     }
 }

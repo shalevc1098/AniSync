@@ -1,7 +1,7 @@
 ﻿using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 using Newtonsoft.Json.Linq;
-using Shoko.Plugin.Abstractions;
+using Shoko.Abstractions.Plugin;
 using System;
 using System.Collections.Generic;
 using System.Linq;

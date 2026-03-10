@@ -1,6 +1,6 @@
 ﻿using System;
 using Microsoft.Extensions.DependencyInjection;
-using Shoko.Plugin.Abstractions;
+using Shoko.Abstractions.Plugin;
 
 public class PluginServiceRegistration : IPluginServiceRegistration
 {

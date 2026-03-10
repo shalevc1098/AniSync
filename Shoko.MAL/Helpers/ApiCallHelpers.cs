@@ -1,7 +1,7 @@
 ﻿using Shoko.AniSync.Api;
 using Shoko.AniSync.Interfaces;
 using Shoko.AniSync.Models.Mal;
-using Shoko.Plugin.Abstractions.DataModels;
+using Shoko.Abstractions.Metadata;
 using System;
 using System.Collections.Generic;
 using System.Linq;

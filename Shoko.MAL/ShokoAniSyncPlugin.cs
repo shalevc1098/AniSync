@@ -1,13 +1,16 @@
-﻿using Shoko.Plugin.Abstractions.Events;
-using Shoko.Plugin.Abstractions.Services;
-using Shoko.Plugin.Abstractions;
+﻿using Shoko.Abstractions.Events;
+using Shoko.Abstractions.Services;
+using Shoko.Abstractions.Plugin;
+using Shoko.Abstractions.Metadata;
+using Shoko.Abstractions.Metadata.Shoko;
+using Shoko.Abstractions.UserData;
+using Shoko.Abstractions.UserData.Enums;
+using Shoko.Abstractions.Enums;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Shoko.Plugin.Abstractions.DataModels;
 using Shoko.AniSync.Api;
 using Microsoft.Extensions.Caching.Memory;
 using Shoko.AniSync.Interfaces;
-using Shoko.Plugin.Abstractions.DataModels.Shoko;
 using Shoko.AniSync.Helpers;
 using Shoko.AniSync.Models.Mal;
 using Shoko.MAL.Models;
@@ -15,7 +18,6 @@ using System.Globalization;
 using System.Linq;
 using Shoko.AniSync.Configuration;
 using System.Text.RegularExpressions;
-using Shoko.Plugin.Abstractions.Enums;
 
 namespace Shoko.AniSync
 {
@@ -110,16 +112,16 @@ namespace Shoko.AniSync
         {
             return episode.Series?.Titles?.Any(title =>
             {
-                bool titleMatch = CompareStrings(anime.Title ?? "", title.Title) ||
-                   (anime.AlternativeTitles?.En != null && CompareStrings(anime.AlternativeTitles.En, title.Title)) ||
-                   (anime.AlternativeTitles?.Ja != null && CompareStrings(anime.AlternativeTitles.Ja, title.Title)) ||
-                   (anime.AlternativeTitles?.Synonyms != null && anime.AlternativeTitles.Synonyms.Any(synonym => CompareStrings(synonym, title.Title)));
+                bool titleMatch = CompareStrings(anime.Title ?? "", title.Value) ||
+                   (anime.AlternativeTitles?.En != null && CompareStrings(anime.AlternativeTitles.En, title.Value)) ||
+                   (anime.AlternativeTitles?.Ja != null && CompareStrings(anime.AlternativeTitles.Ja, title.Value)) ||
+                   (anime.AlternativeTitles?.Synonyms != null && anime.AlternativeTitles.Synonyms.Any(synonym => CompareStrings(synonym, title.Value)));
                 if (!titleMatch)
                 {
-                    titleMatch = ContainsExtended(anime.Title ?? "", title.Title) ||
-                   (anime.AlternativeTitles?.En != null && ContainsExtended(anime.AlternativeTitles.En, title.Title)) ||
-                   (anime.AlternativeTitles?.Ja != null && ContainsExtended(anime.AlternativeTitles.Ja, title.Title)) ||
-                   (anime.AlternativeTitles?.Synonyms != null && anime.AlternativeTitles.Synonyms.Any(synonym => ContainsExtended(synonym, title.Title)));
+                    titleMatch = ContainsExtended(anime.Title ?? "", title.Value) ||
+                   (anime.AlternativeTitles?.En != null && ContainsExtended(anime.AlternativeTitles.En, title.Value)) ||
+                   (anime.AlternativeTitles?.Ja != null && ContainsExtended(anime.AlternativeTitles.Ja, title.Value)) ||
+                   (anime.AlternativeTitles?.Synonyms != null && anime.AlternativeTitles.Synonyms.Any(synonym => ContainsExtended(synonym, title.Value)));
                 }
                 return titleMatch;
             }) ?? false;
@@ -134,7 +136,7 @@ namespace Shoko.AniSync
             return sanitizedFirst.Contains(sanitizedSecond, StringComparison.OrdinalIgnoreCase);
         }
 
-        private async Task<Anime?> GetOva(IApiCallHelpers apiCallHelpers, int animeId, IReadOnlyList<AnimeTitle> episodeNames, string? alternativeId = null, string? shokoUsername = null)
+        private async Task<Anime?> GetOva(IApiCallHelpers apiCallHelpers, int animeId, IReadOnlyList<ITitle> episodeNames, string? alternativeId = null, string? shokoUsername = null)
         {
             Anime? anime = await apiCallHelpers.GetAnime(animeId, getRelated: true, alternativeId: alternativeId, shokoUsername: shokoUsername);
             if (anime == null)
@@ -152,9 +154,9 @@ namespace Shoko.AniSync
                 {
                     bool titleMatch = episodeNames.Any(episodeName =>
                     {
-                        bool match = ContainsExtended(detailedRelatedAnime.Title, episodeName.Title) ||
-                        (detailedRelatedAnime.AlternativeTitles?.En != null && ContainsExtended(detailedRelatedAnime.AlternativeTitles.En, episodeName.Title)) ||
-                        (detailedRelatedAnime.AlternativeTitles?.Ja != null && ContainsExtended(detailedRelatedAnime.AlternativeTitles.Ja, episodeName.Title));
+                        bool match = ContainsExtended(detailedRelatedAnime.Title, episodeName.Value) ||
+                        (detailedRelatedAnime.AlternativeTitles?.En != null && ContainsExtended(detailedRelatedAnime.AlternativeTitles.En, episodeName.Value)) ||
+                        (detailedRelatedAnime.AlternativeTitles?.Ja != null && ContainsExtended(detailedRelatedAnime.AlternativeTitles.Ja, episodeName.Value));
                         return match;
                     });
                     if (titleMatch)
@@ -188,7 +190,7 @@ namespace Shoko.AniSync
             {
                 entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(15);
                 
-                var searchTasks = episode.Series?.Titles?.Select(t => apiCallHelpers.SearchAnime(t.Title, shokoUsername)).ToArray() ?? new Task<List<Anime>?>[0];
+                var searchTasks = episode.Series?.Titles?.Select(t => apiCallHelpers.SearchAnime(t.Value, shokoUsername)).ToArray() ?? new Task<List<Anime>?>[0];
                 var results = await Task.WhenAll(searchTasks);
                 var allAnimes = results.SelectMany(list => list ?? new List<Anime>());
                 return allAnimes.DistinctBy(a => a.Id).ToList();
@@ -210,72 +212,19 @@ namespace Shoko.AniSync
             if (candidates.Count > 1)
             {
                 _logger.LogDebug("Found {Count} candidates for {Title}, selected best match with {Days} days difference", 
-                    candidates.Count, episode.Series?.Titles?.First()?.Title ?? "Unknown", candidates.First().DiffDays.ToString("0"));
+                    candidates.Count, episode.Series?.Titles?.First()?.Value ?? "Unknown", candidates.First().DiffDays.ToString("0"));
             }
             
             Anime? anime = candidates.FirstOrDefault()?.Anime;
             if (anime == null)
             {
-                _logger.LogError("Could not find anime for {Title}", episode.Series?.Titles?.First()?.Title ?? "Unknown");
+                _logger.LogError("Could not find anime for {Title}", episode.Series?.Titles?.First()?.Value ?? "Unknown");
                 return null;
             }
             
             // Only fetch full details if we don't have them cached and actually need related anime
             // For now, return the basic anime object as it contains most needed fields
             return anime;
-        }
-
-        private bool DetermineWatchedState(VideoUserDataSavedEventArgs e)
-        {
-            // Check the reason for the event
-            switch (e.Reason)
-            {
-                case UserDataSaveReason.PlaybackEnd:
-                    return true;
-                    
-                case UserDataSaveReason.UserInteraction:
-                    // User manually changed the state
-                    // The challenge: We can't directly know if marking watched or unwatched
-                    // Strategy: 
-                    // 1. If LastPlayedAt is null -> unwatched (never watched or unmarked)
-                    // 2. If LastPlayedAt exists and is very recent (< 10 seconds) -> just marked watched
-                    // 3. If LastPlayedAt exists but is old -> likely unmarking (the date didn't change)
-                    
-                    if (!e.UserData.LastPlayedAt.HasValue)
-                    {
-                        // No watch date = unwatched
-                        _logger.LogDebug("UserInteraction: No LastPlayedAt - treating as unwatched");
-                        return false;
-                    }
-                    
-                    var timeSinceWatched = DateTime.Now - e.UserData.LastPlayedAt.Value;
-                    bool isRecentlyWatched = timeSinceWatched.TotalSeconds < 10;
-                    
-                    _logger.LogDebug("UserInteraction: LastPlayedAt={LastPlayed}, TimeSince={Seconds}s, IsRecent={IsRecent}",
-                        e.UserData.LastPlayedAt.Value, timeSinceWatched.TotalSeconds, isRecentlyWatched);
-                    
-                    // If the timestamp is very recent, user just marked it as watched
-                    // If the timestamp is old, user is likely unmarking (timestamp didn't update)
-                    return isRecentlyWatched;
-                    
-                case UserDataSaveReason.AnidbImport:
-                    // Imported from AniDB - has watch date means watched
-                    return e.UserData.LastPlayedAt.HasValue;
-                    
-                case UserDataSaveReason.PlaybackProgress:
-                case UserDataSaveReason.PlaybackStart:
-                case UserDataSaveReason.PlaybackPause:
-                case UserDataSaveReason.PlaybackResume:
-                    // These are progress updates, not completion - don't sync
-                    // These should be filtered out earlier, but if we get here, check LastPlayedAt
-                    return e.UserData.LastPlayedAt.HasValue;
-                    
-                default:
-                    // Default: check if it has a watch date
-                    _logger.LogDebug("Unknown reason {Reason}, using LastPlayedAt presence: {HasDate}", 
-                        e.Reason, e.UserData.LastPlayedAt.HasValue);
-                    return e.UserData.LastPlayedAt.HasValue;
-            }
         }
 
         private async Task<Anime?> GetIdFromOfflineDb(IApiCallHelpers apiCallHelpers, IShokoEpisode episode, string? shokoUsername = null)
@@ -297,23 +246,22 @@ namespace Shoko.AniSync
         }
 
 
-        private async void OnEpisodeWatchedAsync(object? sender, VideoUserDataSavedEventArgs e)
+        private async void OnEpisodeWatchedAsync(object? sender, EpisodeUserDataSavedEventArgs e)
         {
             try
             {
                 // Get the user who triggered this event
-                var shokoUser = e.User; // This is the IShokoUser who watched the episode!
+                var shokoUser = e.User;
                 if (shokoUser != null)
                 {
-                    _logger.LogInformation("Episode watched by Shoko user: {Username}", 
+                    _logger.LogInformation("Episode event for Shoko user: {Username}",
                         shokoUser.Username);
-                    // User-specific MAL sync will be handled below
                 }
                 else
                 {
-                    _logger.LogWarning("No user information available in episode watched event");
+                    _logger.LogWarning("No user information available in episode event");
                 }
-                
+
                 // Check if auto-sync is enabled for this user
                 if (!(Plugin.Instance?.Config?.GetEnableAutoSync(shokoUser?.Username) ?? true))
                 {
@@ -321,18 +269,20 @@ namespace Shoko.AniSync
                     return;
                 }
 
-                // Skip progress events that don't represent completion or manual changes
-                if (e.Reason == UserDataSaveReason.PlaybackProgress ||
-                    e.Reason == UserDataSaveReason.PlaybackStart ||
-                    e.Reason == UserDataSaveReason.PlaybackPause ||
-                    e.Reason == UserDataSaveReason.PlaybackResume)
+                // Skip import events
+                if (e.Reason.HasFlag(EpisodeUserDataSaveReason.Import))
+                    return;
+
+                // Skip events that clearly don't affect watch state
+                const EpisodeUserDataSaveReason nonWatchReasons =
+                    EpisodeUserDataSaveReason.IsFavorite |
+                    EpisodeUserDataSaveReason.UserTags |
+                    EpisodeUserDataSaveReason.UserRating;
+                if (e.Reason != EpisodeUserDataSaveReason.None && (e.Reason & ~nonWatchReasons) == 0)
                 {
-                    _logger.LogDebug("Skipping sync for playback progress event: {Reason}", e.Reason);
+                    _logger.LogDebug("Skipping sync for non-watch event: {Reason}", e.Reason);
                     return;
                 }
-
-                if (e.Reason == UserDataSaveReason.AnidbImport)
-                    return;
 
                 // Get the correct MAL account for this user
                 UserApiAuth? userAuth = null;
@@ -391,32 +341,19 @@ namespace Shoko.AniSync
                     await Task.Delay(TimeSpan.FromSeconds(syncDelaySeconds));
                 }
 
-                IShokoEpisode? maxEpisode = null;
-                foreach (var episode in e.Video.Episodes)
+                var maxEpisode = e.Episode;
+                if (maxEpisode?.Series == null)
                 {
-                    if (episode.Series is not { } series) continue;
-                    if (episode.Type is not EpisodeType.Episode and not EpisodeType.Special) continue;
-
-                    if (maxEpisode == null
-                        || episode.Type == EpisodeType.Episode && maxEpisode.Type == EpisodeType.Special
-                        || episode.Type == maxEpisode.Type && episode.EpisodeNumber > maxEpisode.EpisodeNumber)
-                    {
-                        maxEpisode = episode;
-                    }
-                }
-                if (maxEpisode == null)
-                {
-                    _logger.LogWarning("No episodes found for {Title}", e.Video?.MediaInfo?.Title ?? "Unknown");
+                    _logger.LogWarning("No episode or series in event");
                     return;
                 }
 
-                // Determine if episode is being marked as watched or unwatched
-                bool isWatched = DetermineWatchedState(e);
+                bool isWatched = e.UserData.IsWatched;
                 int shokoEpisodeNumber = maxEpisode.EpisodeNumber;
                 int playbackCount = e.UserData.PlaybackCount;
                 
                 _logger.LogInformation("Episode {EpisodeNumber} event: Reason={Reason}, PlaybackCount={Count}, IsWatched={Watched} for {Title}", 
-                    shokoEpisodeNumber, e.Reason, playbackCount, isWatched, maxEpisode.Series?.PreferredTitle ?? "Unknown");
+                    shokoEpisodeNumber, e.Reason, playbackCount, isWatched, maxEpisode.Series?.Title ?? "Unknown");
 
                 var anime = await GetIdFromOfflineDb(apiCallHelpers, maxEpisode, shokoUser?.Username);
                 if (anime != null)
@@ -801,7 +738,7 @@ namespace Shoko.AniSync
                 }
                 else
                 {
-                    _logger.LogWarning("Could not find MAL anime for {Title}", maxEpisode.Series?.PreferredTitle ?? "Unknown");
+                    _logger.LogWarning("Could not find MAL anime for {Title}", maxEpisode.Series?.Title ?? "Unknown");
                 }
             }
             catch (Exception ex)
@@ -812,14 +749,14 @@ namespace Shoko.AniSync
 
         Task IHostedService.StartAsync(CancellationToken cancellationToken)
         {
-            _userDataService.VideoUserDataSaved += OnEpisodeWatchedAsync;
+            _userDataService.EpisodeUserDataSaved += OnEpisodeWatchedAsync;
             _logger.LogInformation("AniSync plugin started - listening for episode watch events");
             return Task.CompletedTask;
         }
 
         Task IHostedService.StopAsync(CancellationToken cancellationToken)
         {
-            _userDataService.VideoUserDataSaved -= OnEpisodeWatchedAsync;
+            _userDataService.EpisodeUserDataSaved -= OnEpisodeWatchedAsync;
             return Task.CompletedTask;
         }
     }

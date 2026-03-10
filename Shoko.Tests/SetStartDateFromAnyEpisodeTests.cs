@@ -12,9 +12,9 @@ using Shoko.AniSync.Configuration;
 using Shoko.AniSync.Helpers;
 using Shoko.AniSync.Interfaces;
 using Shoko.AniSync.Models.Mal;
-using Shoko.Plugin.Abstractions;
-using Shoko.Plugin.Abstractions.DataModels;
-using Shoko.Plugin.Abstractions.Events;
+using Shoko.Abstractions.Plugin;
+using Shoko.Abstractions.Metadata;
+using Shoko.Abstractions.Events;
 using Xunit;
 
 namespace Shoko.Tests
@@ -23,7 +23,7 @@ namespace Shoko.Tests
     {
         private readonly Mock<ILogger<ShokoAniSyncPlugin>> _loggerMock;
         private readonly Mock<IApiCallHelpers> _apiCallHelpersMock;
-        private readonly Mock<Shoko.Plugin.Abstractions.Services.IUserDataService> _userDataServiceMock;
+        private readonly Mock<Shoko.Abstractions.Services.IUserDataService> _userDataServiceMock;
         private readonly Config _config;
         private readonly string _testConfigPath;
 
@@ -31,7 +31,7 @@ namespace Shoko.Tests
         {
             _loggerMock = new Mock<ILogger<ShokoAniSyncPlugin>>();
             _apiCallHelpersMock = new Mock<IApiCallHelpers>();
-            _userDataServiceMock = new Mock<Shoko.Plugin.Abstractions.Services.IUserDataService>();
+            _userDataServiceMock = new Mock<Shoko.Abstractions.Services.IUserDataService>();
             _testConfigPath = Path.Combine(Path.GetTempPath(), $"test-config-{Guid.NewGuid()}.json");
             _config = new Config(_testConfigPath);
         }
