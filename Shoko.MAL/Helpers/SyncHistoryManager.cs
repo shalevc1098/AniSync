@@ -95,13 +95,13 @@ namespace Shoko.AniSync.Helpers
                 }
 
                 var history = _userHistories[username].History;
-                
+
                 if (limit.HasValue)
                 {
-                    history = history.Take(limit.Value).ToList();
+                    return history.Take(limit.Value).ToList();
                 }
 
-                return history;
+                return history.ToList();
             }
             finally
             {
@@ -227,12 +227,15 @@ namespace Shoko.AniSync.Helpers
         {
             try
             {
-                var json = JsonSerializer.Serialize(_userHistories, new JsonSerializerOptions 
-                { 
+                var json = JsonSerializer.Serialize(_userHistories, new JsonSerializerOptions
+                {
                     WriteIndented = true,
                     PropertyNamingPolicy = JsonNamingPolicy.CamelCase
                 });
-                await File.WriteAllTextAsync(_historyFilePath, json);
+                // Write to temp file first, then rename atomically to prevent corruption on crash
+                var tempPath = _historyFilePath + ".tmp";
+                await File.WriteAllTextAsync(tempPath, json);
+                File.Move(tempPath, _historyFilePath, overwrite: true);
             }
             catch (Exception ex)
             {

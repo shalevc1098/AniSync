@@ -14,7 +14,8 @@ namespace Shoko.AniSync.Interfaces
     {
         public async Task Delay(TimeSpan timeSpan)
         {
-            await Task.Delay(timeSpan);
+            if (timeSpan > TimeSpan.Zero)
+                await Task.Delay(timeSpan);
         }
     }
 }

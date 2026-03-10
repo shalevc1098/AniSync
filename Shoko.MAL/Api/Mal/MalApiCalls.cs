@@ -49,7 +49,7 @@ namespace Shoko.AniSync.Api
             {
                 Base = $"{ApiUrl}/users/@me"
             };
-            var apiCall = await _authApiCall.AuthenticatedApiCall(ApiName.Mal, AuthApiCall.CallType.GET, url.Build(), shokoUsername: shokoUsername);
+            using var apiCall = await _authApiCall.AuthenticatedApiCall(ApiName.Mal, AuthApiCall.CallType.GET, url.Build(), shokoUsername: shokoUsername);
             if (apiCall != null)
             {
                 using var streamReader = new StreamReader(await apiCall.Content.ReadAsStreamAsync());
@@ -98,7 +98,7 @@ namespace Shoko.AniSync.Api
 
             string builtUrl = url.Build();
             _logger.LogInformation($"Starting search for anime (GET {builtUrl})...");
-            var apiCall = await _authApiCall.AuthenticatedApiCall(ApiName.Mal, AuthApiCall.CallType.GET, builtUrl, shokoUsername: shokoUsername);
+            using var apiCall = await _authApiCall.AuthenticatedApiCall(ApiName.Mal, AuthApiCall.CallType.GET, builtUrl, shokoUsername: shokoUsername);
             if (apiCall != null)
             {
                 using var streamReader = new StreamReader(await apiCall.Content.ReadAsStreamAsync());
@@ -133,7 +133,7 @@ namespace Shoko.AniSync.Api
             _logger.LogInformation($"Retrieving an anime from MAL (GET {builtUrl})...");
             try
             {
-                var apiCall = await _authApiCall.AuthenticatedApiCall(ApiName.Mal, AuthApiCall.CallType.GET, builtUrl, shokoUsername: shokoUsername);
+                using var apiCall = await _authApiCall.AuthenticatedApiCall(ApiName.Mal, AuthApiCall.CallType.GET, builtUrl, shokoUsername: shokoUsername);
                 if (apiCall != null)
                 {
                     using var streamReader = new StreamReader(await apiCall.Content.ReadAsStreamAsync());
@@ -150,7 +150,7 @@ namespace Shoko.AniSync.Api
             }
             catch (Exception e)
             {
-                _logger.LogError(e.Message);
+                _logger.LogError(e, "Failed to deserialize anime response");
                 return null;
             }
         }
@@ -188,7 +188,7 @@ namespace Shoko.AniSync.Api
             while (builtUrl != null)
             {
                 _logger.LogInformation($"Getting user anime list (GET {builtUrl})...");
-                var apiCall = await _authApiCall.AuthenticatedApiCall(ApiName.Mal, AuthApiCall.CallType.GET, builtUrl, shokoUsername: shokoUsername);
+                using var apiCall = await _authApiCall.AuthenticatedApiCall(ApiName.Mal, AuthApiCall.CallType.GET, builtUrl, shokoUsername: shokoUsername);
                 if (apiCall != null)
                 {
                     using var streamReader = new StreamReader(await apiCall.Content.ReadAsStreamAsync());
@@ -303,7 +303,7 @@ namespace Shoko.AniSync.Api
             UpdateAnimeStatusResponse? updateResponse;
             try
             {
-                var apiCall = await _authApiCall.AuthenticatedApiCall(ApiName.Mal, AuthApiCall.CallType.PUT, builtUrl, new FormUrlEncodedContent(body.ToArray()), shokoUsername: shokoUsername);
+                using var apiCall = await _authApiCall.AuthenticatedApiCall(ApiName.Mal, AuthApiCall.CallType.PUT, builtUrl, new FormUrlEncodedContent(body.ToArray()), shokoUsername: shokoUsername);
 
                 if (apiCall != null)
                 {
@@ -321,7 +321,7 @@ namespace Shoko.AniSync.Api
             }
             catch (Exception e)
             {
-                _logger.LogError(e.Message);
+                _logger.LogError(e, "Failed to deserialize update response");
                 updateResponse = null;
             }
 

@@ -16,6 +16,9 @@ namespace Shoko.AniSync.Configuration
         [JsonIgnore]
         private readonly string _filePath;
 
+        [JsonIgnore]
+        private readonly object _configLock = new object();
+
         // Global default provider (for backward compatibility)
         [JsonIgnore]
         public ApiName SelectedProvider { get; set; } = ApiName.Mal;
@@ -100,34 +103,40 @@ namespace Shoko.AniSync.Configuration
         public void SetAuthForShokoUser(string shokoUsername, ApiName provider, UserApiAuth auth)
         {
             if (string.IsNullOrEmpty(shokoUsername) || auth == null) return;
-            
-            var userConfig = GetUserConfig(shokoUsername) ?? new UserConfig();
-            
-            if (userConfig.Providers == null)
-                userConfig.Providers = new Dictionary<string, ProviderAuth>();
-            
-            userConfig.Providers[provider.ToString()] = new ProviderAuth
+
+            lock (_configLock)
             {
-                Username = auth.Username,
-                AccessToken = auth.AccessToken,
-                RefreshToken = auth.RefreshToken,
-                ExpiresAt = auth.ExpiresAt
-            };
-            
-            SetUserConfig(shokoUsername, userConfig);
-            Save();
+                var userConfig = GetUserConfig(shokoUsername) ?? new UserConfig();
+
+                if (userConfig.Providers == null)
+                    userConfig.Providers = new Dictionary<string, ProviderAuth>();
+
+                userConfig.Providers[provider.ToString()] = new ProviderAuth
+                {
+                    Username = auth.Username,
+                    AccessToken = auth.AccessToken,
+                    RefreshToken = auth.RefreshToken,
+                    ExpiresAt = auth.ExpiresAt
+                };
+
+                SetUserConfig(shokoUsername, userConfig);
+                Save();
+            }
         }
         
         // Set user settings for a Shoko user
         public void SetUserSettings(string shokoUsername, UserSettings settings)
         {
             if (string.IsNullOrEmpty(shokoUsername)) return;
-            
-            var userConfig = GetUserConfig(shokoUsername) ?? new UserConfig();
-            userConfig.Settings = settings ?? new UserSettings();
-            
-            SetUserConfig(shokoUsername, userConfig);
-            Save();
+
+            lock (_configLock)
+            {
+                var userConfig = GetUserConfig(shokoUsername) ?? new UserConfig();
+                userConfig.Settings = settings ?? new UserSettings();
+
+                SetUserConfig(shokoUsername, userConfig);
+                Save();
+            }
         }
         
 
@@ -138,14 +147,24 @@ namespace Shoko.AniSync.Configuration
 
             if (File.Exists(_filePath))
             {
-                var json = File.ReadAllText(_filePath);
-                var data = JsonConvert.DeserializeObject<Dictionary<string, UserConfig>>(json);
-                if (data != null)
+                try
                 {
-                    foreach (var kvp in data)
+                    var json = File.ReadAllText(_filePath);
+                    var data = JsonConvert.DeserializeObject<Dictionary<string, UserConfig>>(json);
+                    if (data != null)
                     {
-                        this[kvp.Key] = kvp.Value;
+                        foreach (var kvp in data)
+                        {
+                            this[kvp.Key] = kvp.Value;
+                        }
                     }
+                }
+                catch (Exception ex)
+                {
+                    // Back up corrupt file and start fresh so plugin can still load
+                    var backupPath = _filePath + ".corrupt";
+                    try { File.Copy(_filePath, backupPath, overwrite: true); } catch { }
+                    System.Diagnostics.Debug.WriteLine($"Config file corrupt, backed up to {backupPath}: {ex.Message}");
                 }
             }
             else
@@ -157,10 +176,16 @@ namespace Shoko.AniSync.Configuration
 
         public void Save()
         {
-            // Create a clean dictionary for serialization (without the _filePath)
-            var dataToSave = new Dictionary<string, UserConfig>(this);
-            var json = JsonConvert.SerializeObject(dataToSave, Formatting.Indented);
-            File.WriteAllText(_filePath, json);
+            lock (_configLock)
+            {
+                // Create a clean dictionary for serialization (without the _filePath)
+                var dataToSave = new Dictionary<string, UserConfig>(this);
+                var json = JsonConvert.SerializeObject(dataToSave, Formatting.Indented);
+                // Write to temp file first, then rename atomically to prevent corruption on crash
+                var tempPath = _filePath + ".tmp";
+                File.WriteAllText(tempPath, json);
+                File.Move(tempPath, _filePath, overwrite: true);
+            }
         }
 
         private void EnsureDirectoryExists()
