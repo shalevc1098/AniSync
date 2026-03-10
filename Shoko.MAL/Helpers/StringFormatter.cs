@@ -10,6 +10,7 @@ namespace Shoko.AniSync.Helpers
     {
         public static string RemoveSpecialCharacters(string str)
         {
+            if (string.IsNullOrEmpty(str)) return string.Empty;
             StringBuilder stringBuilder = new StringBuilder();
             foreach (char c in str)
             {
@@ -24,10 +25,11 @@ namespace Shoko.AniSync.Helpers
 
         public static string RemoveSpaces(string str)
         {
+            if (string.IsNullOrEmpty(str)) return string.Empty;
             StringBuilder stringBuilder = new StringBuilder();
             foreach (char c in str)
             {
-                if (c is not ((< '0' or > '9') and (< 'A' or > 'Z') and (< 'a' or > 'z') and ' '))
+                if (c is (>= '0' and <= '9') or (>= 'A' and <= 'Z') or (>= 'a' and <= 'z') or ' ')
                 {
                     stringBuilder.Append(c);
                 }

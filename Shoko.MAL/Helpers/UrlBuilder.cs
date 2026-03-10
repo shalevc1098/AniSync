@@ -32,12 +32,12 @@ namespace Shoko.AniSync.Helpers
             StringBuilder url = new StringBuilder(Base);
             if (Parameters.Count > 0)
             {
-                KeyValuePair<string, string> last = Parameters.Last();
                 url.Append('?');
-                foreach (var parameter in Parameters)
+                for (int i = 0; i < Parameters.Count; i++)
                 {
+                    var parameter = Parameters[i];
                     url.Append($"{parameter.Key}={Uri.EscapeDataString(parameter.Value)}");
-                    if (!parameter.Equals(last))
+                    if (i < Parameters.Count - 1)
                     {
                         url.Append('&');
                     }
