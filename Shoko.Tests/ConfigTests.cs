@@ -320,27 +320,34 @@ public class ConfigTests : IDisposable
         _config.Should().BeEmpty("null auth should be rejected");
     }
 
-    // ========================================================================
-    // SelectedProvider null safety
-    // Null-coalescing should default to Mal when Instance or Config is null.
-    // ========================================================================
-
     [Fact]
-    public void SelectedProvider_Null_Instance_Should_Default_To_Mal()
+    public void GetAuthForShokoUser_With_Empty_Or_Null_Username_Should_Return_Null()
     {
-        ApiName? provider = null;
-        var result = provider ?? ApiName.Mal;
+        // Act
+        var result1 = _config.GetAuthForShokoUser("", ApiName.Mal);
+        var result2 = _config.GetAuthForShokoUser(null, ApiName.Mal);
 
-        result.Should().Be(ApiName.Mal);
+        // Assert
+        result1.Should().BeNull();
+        result2.Should().BeNull();
     }
 
     [Fact]
-    public void SelectedProvider_Null_Config_Should_Default_To_Mal()
+    public void GetAuthForShokoUser_With_Default_Provider_Should_Use_SelectedProvider()
     {
-        ApiName? provider = null;
-        var result = provider ?? ApiName.Mal;
+        // Arrange
+        _config.SelectedProvider = ApiName.Mal;
+        _config.SetAuthForShokoUser("user1", ApiName.Mal,
+            new UserApiAuth { Username = "mal_user", AccessToken = "mal_token" });
+        _config.SetAuthForShokoUser("user1", ApiName.AniList,
+            new UserApiAuth { Username = "anilist_user", AccessToken = "anilist_token" });
 
-        result.Should().Be(ApiName.Mal);
+        // Act
+        var result = _config.GetAuthForShokoUser("user1"); // No provider specified
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.Username.Should().Be("mal_user");
     }
 
     [Fact]

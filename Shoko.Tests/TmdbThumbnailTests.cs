@@ -2,8 +2,8 @@ using System.Collections.Generic;
 using System.Linq;
 using FluentAssertions;
 using Moq;
-using Shoko.Plugin.Abstractions.DataModels;
-using Shoko.Plugin.Abstractions.DataModels.Shoko;
+using Shoko.Abstractions.Metadata;
+using Shoko.Abstractions.Metadata.Shoko;
 using Xunit;
 
 namespace Shoko.Tests
@@ -47,37 +47,5 @@ namespace Shoko.Tests
             thumbnailUrl.Should().BeNull();
         }
         
-        [Fact]
-        public void HistoryHtml_HandlesApiEndpoint_Correctly()
-        {
-            // Test that /api/ URLs are handled correctly in the HTML
-            var apiUrl = "/api/v3/Episode/123456/Images/Thumbnail";
-            
-            // Simulate the JavaScript logic
-            string processedUrl = apiUrl;
-            if (apiUrl.StartsWith("/api/"))
-            {
-                // In real scenario, window.location.origin would be added
-                processedUrl = "http://localhost:8111" + apiUrl;
-            }
-            
-            processedUrl.Should().Be("http://localhost:8111/api/v3/Episode/123456/Images/Thumbnail");
-        }
-        
-        [Fact]
-        public void HistoryHtml_HandlesMalUrl_Correctly()
-        {
-            // Test that MAL URLs are handled correctly
-            var malUrl = "https://cdn.myanimelist.net/images/anime/1025/147458.webp";
-            
-            // Simulate the JavaScript logic
-            string processedUrl = malUrl;
-            if (malUrl.EndsWith(".webp"))
-            {
-                processedUrl = malUrl.Replace(".webp", ".jpg");
-            }
-            
-            processedUrl.Should().Be("https://cdn.myanimelist.net/images/anime/1025/147458.jpg");
-        }
     }
 }

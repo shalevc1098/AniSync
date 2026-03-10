@@ -25,15 +25,6 @@ public class MalApiFormatTests
             "MAL API expects lowercase boolean strings");
     }
 
-    [Fact]
-    public void TrueToString_WithoutToLower_ProducesWrongCase()
-    {
-        true.ToString().Should().Be("True",
-            "C# bool.ToString() produces title case, which MAL rejects");
-        true.ToString().ToLower().Should().Be("true",
-            "ToLower() fixes the casing for MAL API");
-    }
-
     // ========================================================================
     // OAuth redirect URL casing
     // The redirect URL must use lowercase "/anisync/" to match the controller route.

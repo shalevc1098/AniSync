@@ -10,12 +10,15 @@ using Shoko.AniSync.Api;
 using Shoko.AniSync.Helpers;
 using Shoko.AniSync.Interfaces;
 using Shoko.AniSync.Models.Mal;
-using Shoko.Plugin.Abstractions;
-using Shoko.Plugin.Abstractions.DataModels;
-using Shoko.Plugin.Abstractions.DataModels.Shoko;
-using Shoko.Plugin.Abstractions.Enums;
-using Shoko.Plugin.Abstractions.Events;
-using Shoko.Plugin.Abstractions.Services;
+using Shoko.Abstractions.Plugin;
+using Shoko.Abstractions.Metadata;
+using Shoko.Abstractions.Metadata.Shoko;
+using Shoko.Abstractions.Enums;
+using Shoko.Abstractions.Events;
+using Shoko.Abstractions.Services;
+using Shoko.Abstractions.User;
+using Shoko.Abstractions.UserData;
+using Shoko.Abstractions.UserData.Enums;
 using Xunit;
 
 namespace Shoko.Tests;
@@ -28,7 +31,7 @@ public class SyncLogicTests
     private readonly Mock<IMetadataService> _metadataServiceMock;
     private readonly Mock<IUserDataService> _userDataServiceMock;
     private readonly Mock<IApplicationPaths> _applicationPathsMock;
-    
+
     public SyncLogicTests()
     {
         _httpClientFactoryMock = new Mock<IHttpClientFactory>();
@@ -37,70 +40,76 @@ public class SyncLogicTests
         _metadataServiceMock = new Mock<IMetadataService>();
         _userDataServiceMock = new Mock<IUserDataService>();
         _applicationPathsMock = new Mock<IApplicationPaths>();
-        
+
         _loggerFactoryMock.Setup(x => x.CreateLogger(It.IsAny<string>()))
             .Returns(Mock.Of<ILogger>());
     }
 
-    [Theory]
-    [InlineData(UserDataSaveReason.PlaybackEnd, 1, true, true)] // Playback ended with count = watched
-    [InlineData(UserDataSaveReason.PlaybackEnd, 0, false, false)] // Playback ended before Shoko marks watched = skip
-    [InlineData(UserDataSaveReason.UserInteraction, 1, true, true)] // Manual mark with playback = watched
-    [InlineData(UserDataSaveReason.UserInteraction, 0, false, false)] // Manual unmark = unwatched
-    [InlineData(UserDataSaveReason.AnidbImport, 1, true, true)] // Import with playback = watched
-    [InlineData(UserDataSaveReason.AnidbImport, 0, false, false)] // Import without playback = unwatched
-    [InlineData(UserDataSaveReason.PlaybackProgress, 1, true, true)] // Progress with history = watched (existing)
-    [InlineData(UserDataSaveReason.PlaybackProgress, 0, false, false)] // Progress without history = unwatched
-    public void DetermineWatchedState_Should_Return_Correct_State(
-        UserDataSaveReason reason, 
-        int playbackCount, 
-        bool hasLastPlayed,
-        bool expectedIsWatched)
+    [Fact]
+    public void Should_Skip_Sync_For_Import_Events()
     {
-        // Arrange
-        var mockUserData = new Mock<IVideoUserData>();
-        mockUserData.Setup(x => x.PlaybackCount).Returns(playbackCount);
-        mockUserData.Setup(x => x.LastPlayedAt).Returns(hasLastPlayed ? DateTime.Now : (DateTime?)null);
-        
-        var eventArgs = new VideoUserDataSavedEventArgs(
-            reason,
-            Mock.Of<IShokoUser>(),
-            Mock.Of<IVideo>(),
-            mockUserData.Object
-        );
-        
-        var plugin = new TestablePlugin(_httpClientFactoryMock.Object, _loggerFactoryMock.Object, 
-            _memoryCacheMock.Object, _metadataServiceMock.Object, _userDataServiceMock.Object);
-        
-        // Act
-        var result = plugin.TestDetermineWatchedState(eventArgs);
-        
-        // Assert
-        result.Should().Be(expectedIsWatched);
+        var reason = EpisodeUserDataSaveReason.Import;
+        reason.HasFlag(EpisodeUserDataSaveReason.Import).Should().BeTrue(
+            "Import events should be skipped");
     }
 
     [Fact]
-    public void Should_Skip_Sync_For_Progress_Events()
+    public void Should_Skip_Sync_For_NonWatch_Events()
     {
-        // Arrange
-        var progressReasons = new[]
+        const EpisodeUserDataSaveReason nonWatchReasons =
+            EpisodeUserDataSaveReason.IsFavorite |
+            EpisodeUserDataSaveReason.UserTags |
+            EpisodeUserDataSaveReason.UserRating;
+
+        var pureNonWatch = new[]
         {
-            UserDataSaveReason.PlaybackProgress,
-            UserDataSaveReason.PlaybackStart,
-            UserDataSaveReason.PlaybackPause,
-            UserDataSaveReason.PlaybackResume
+            EpisodeUserDataSaveReason.IsFavorite,
+            EpisodeUserDataSaveReason.UserTags,
+            EpisodeUserDataSaveReason.UserRating
         };
-        
-        foreach (var reason in progressReasons)
+
+        foreach (var reason in pureNonWatch)
         {
-            // These events should be skipped early in the sync process
-            reason.Should().BeOneOf(
-                UserDataSaveReason.PlaybackProgress,
-                UserDataSaveReason.PlaybackStart,
-                UserDataSaveReason.PlaybackPause,
-                UserDataSaveReason.PlaybackResume
-            );
+            var shouldSkip = reason != EpisodeUserDataSaveReason.None && (reason & ~nonWatchReasons) == 0;
+            shouldSkip.Should().BeTrue($"{reason} should be skipped as non-watch event");
         }
+    }
+
+    [Fact]
+    public void Should_Process_Watch_Events()
+    {
+        const EpisodeUserDataSaveReason nonWatchReasons =
+            EpisodeUserDataSaveReason.IsFavorite |
+            EpisodeUserDataSaveReason.UserTags |
+            EpisodeUserDataSaveReason.UserRating;
+
+        var shouldProcess = new[]
+        {
+            EpisodeUserDataSaveReason.PlaybackCount,
+            EpisodeUserDataSaveReason.LastPlayedAt,
+            EpisodeUserDataSaveReason.PlaybackCount | EpisodeUserDataSaveReason.LastPlayedAt,
+            EpisodeUserDataSaveReason.None, // unknown/manual - let IsWatched decide
+        };
+
+        foreach (var reason in shouldProcess)
+        {
+            var shouldSkip = reason != EpisodeUserDataSaveReason.None && (reason & ~nonWatchReasons) == 0;
+            shouldSkip.Should().BeFalse($"{reason} should be processed");
+        }
+    }
+
+    [Fact]
+    public void Mixed_Reason_With_Watch_Flag_Should_Process()
+    {
+        // If someone favorites AND the playback count changed in the same event
+        const EpisodeUserDataSaveReason nonWatchReasons =
+            EpisodeUserDataSaveReason.IsFavorite |
+            EpisodeUserDataSaveReason.UserTags |
+            EpisodeUserDataSaveReason.UserRating;
+
+        var reason = EpisodeUserDataSaveReason.IsFavorite | EpisodeUserDataSaveReason.PlaybackCount;
+        var shouldSkip = reason != EpisodeUserDataSaveReason.None && (reason & ~nonWatchReasons) == 0;
+        shouldSkip.Should().BeFalse("mixed reason with PlaybackCount should still be processed");
     }
 
     [Fact]
@@ -108,19 +117,19 @@ public class SyncLogicTests
     {
         // This test validates that when an episode is marked as unwatched in Shoko,
         // we don't reduce the episode count in MAL (to prevent data loss during rewatches)
-        
+
         // Scenario: MAL has episode 10 watched, user marks episode 5 as unwatched in Shoko
         // Expected: MAL should keep episode 10 as the highest watched
-        
+
         var malEpisodeCount = 10;
         var shokoEpisodeNumber = 5;
         var isWatched = false;
-        
+
         // The logic should skip update when:
         // - Episode is marked unwatched (isWatched = false)
         // - OR when Shoko episode number is less than MAL count
         var shouldUpdate = isWatched && shokoEpisodeNumber > malEpisodeCount;
-        
+
         shouldUpdate.Should().BeFalse("Should not update MAL when marking episode as unwatched");
     }
 
@@ -133,12 +142,12 @@ public class SyncLogicTests
         var shokoEpisodeNumber = 1;
         var currentStatus = Status.Completed;
         var isWatched = true;
-        
+
         // Detect rewatch condition
-        var isRewatch = isWatched && 
-                       shokoEpisodeNumber < malEpisodeCount && 
+        var isRewatch = isWatched &&
+                       shokoEpisodeNumber < malEpisodeCount &&
                        (currentStatus == Status.Completed || malEpisodeCount == totalEpisodes);
-        
+
         isRewatch.Should().BeTrue("Should detect rewatch when watching early episode of completed series");
     }
 
@@ -153,11 +162,11 @@ public class SyncLogicTests
             new { Shoko = 3, MAL = 5, IsWatched = true, ShouldUpdate = false }, // Behind MAL
             new { Shoko = 5, MAL = 3, IsWatched = false, ShouldUpdate = false }, // Unwatched
         };
-        
+
         foreach (var testCase in testCases)
         {
             var shouldUpdate = testCase.IsWatched && testCase.Shoko > testCase.MAL;
-            shouldUpdate.Should().Be(testCase.ShouldUpdate, 
+            shouldUpdate.Should().Be(testCase.ShouldUpdate,
                 $"Shoko={testCase.Shoko}, MAL={testCase.MAL}, IsWatched={testCase.IsWatched}");
         }
     }
@@ -167,11 +176,11 @@ public class SyncLogicTests
     {
         var totalEpisodes = 12;
         var shokoEpisodeNumber = 12;
-        
-        var newStatus = (totalEpisodes > 0 && shokoEpisodeNumber >= totalEpisodes) 
-            ? Status.Completed 
+
+        var newStatus = (totalEpisodes > 0 && shokoEpisodeNumber >= totalEpisodes)
+            ? Status.Completed
             : Status.Watching;
-        
+
         newStatus.Should().Be(Status.Completed, "Should set status to Completed when reaching final episode");
     }
 
@@ -662,167 +671,181 @@ public class SyncLogicTests
     }
 
     // ========================================================================
-    // EnableAutoSync gate
+    // "Not in list" add path
+    // When animeWithStatus?.MyListStatus is null, the anime is not in the
+    // user's list yet and needs to be added (if watched).
     // ========================================================================
 
-    [Fact]
-    public void EnableAutoSync_Disabled_Should_Skip_Sync()
+    [Theory]
+    [InlineData(5, 12, true)]   // Mid-series watched episode -> Watching
+    [InlineData(1, 12, true)]   // First episode -> Watching
+    [InlineData(11, 12, true)]  // Penultimate episode -> Watching
+    public void NotInList_WatchedNonFinalEpisode_ShouldAddAsWatching(
+        int shokoEpisodeNumber, int totalEpisodes, bool expectAdd)
     {
-        bool enableAutoSync = false;
+        bool isWatched = true;
+        bool? myListStatus = null; // Not in list
 
-        bool shouldProceed = enableAutoSync;
+        bool shouldAdd = myListStatus == null && isWatched;
+        Status? newStatus = null;
+        DateTime? startDate = null;
+        DateTime? endDate = null;
 
-        shouldProceed.Should().BeFalse("sync should not proceed when EnableAutoSync is disabled");
+        if (shouldAdd)
+        {
+            newStatus = (totalEpisodes > 0 && shokoEpisodeNumber >= totalEpisodes)
+                ? Status.Completed
+                : Status.Watching;
+            startDate = DateTime.Now.Date;
+            if (newStatus == Status.Completed)
+                endDate = DateTime.Now.Date;
+        }
+
+        shouldAdd.Should().Be(expectAdd);
+        newStatus.Should().Be(Status.Watching);
+        startDate.Should().NotBeNull("start date should be set when adding to list");
+        endDate.Should().BeNull("end date should not be set for non-final episode");
+    }
+
+    [Theory]
+    [InlineData(12, 12)]
+    [InlineData(24, 24)]
+    [InlineData(1, 1)]  // Single-episode OVA
+    public void NotInList_WatchedFinalEpisode_ShouldAddAsCompleted(
+        int shokoEpisodeNumber, int totalEpisodes)
+    {
+        bool isWatched = true;
+        bool? myListStatus = null; // Not in list
+
+        bool shouldAdd = myListStatus == null && isWatched;
+        Status? newStatus = null;
+        DateTime? startDate = null;
+        DateTime? endDate = null;
+
+        if (shouldAdd)
+        {
+            newStatus = (totalEpisodes > 0 && shokoEpisodeNumber >= totalEpisodes)
+                ? Status.Completed
+                : Status.Watching;
+            startDate = DateTime.Now.Date;
+            if (newStatus == Status.Completed)
+                endDate = DateTime.Now.Date;
+        }
+
+        shouldAdd.Should().BeTrue();
+        newStatus.Should().Be(Status.Completed);
+        startDate.Should().NotBeNull("start date should be set on first add");
+        endDate.Should().NotBeNull("end date should be set when completing on add");
+    }
+
+    [Fact]
+    public void NotInList_UnwatchedEpisode_ShouldSkipAdd()
+    {
+        bool isWatched = false;
+        bool? myListStatus = null; // Not in list
+
+        bool shouldAdd = myListStatus == null && isWatched;
+
+        shouldAdd.Should().BeFalse("unwatched episode should not add anime to list");
     }
 
     // ========================================================================
-    // maxEpisode prefers regular episodes over specials
+    // SyncOnlyCompleted × first add
+    // When SyncOnlyCompleted=true and anime not yet in list, non-final
+    // episodes should be skipped before the add path is reached.
     // ========================================================================
 
-    private record FakeEpisode(EpisodeType Type, int EpisodeNumber);
-
-    private static FakeEpisode? PickMaxEpisode(FakeEpisode[] episodes)
+    [Fact]
+    public void SyncOnlyCompleted_NotInList_NonFinalEpisode_ShouldSkip()
     {
-        FakeEpisode? maxEpisode = null;
-        foreach (var episode in episodes)
-        {
-            if (episode.Type is not EpisodeType.Episode and not EpisodeType.Special) continue;
+        bool syncOnlyCompleted = true;
+        bool isWatched = true;
+        int shokoEpisodeNumber = 5;
+        int numEpisodes = 12;
 
-            if (maxEpisode == null
-                || episode.Type == EpisodeType.Episode && maxEpisode.Type == EpisodeType.Special
-                || episode.Type == maxEpisode.Type && episode.EpisodeNumber > maxEpisode.EpisodeNumber)
+        // SyncOnlyCompleted gate runs before the add/update branch
+        bool shouldSkip = syncOnlyCompleted && isWatched && numEpisodes > 0 && shokoEpisodeNumber < numEpisodes;
+
+        shouldSkip.Should().BeTrue(
+            "SyncOnlyCompleted should prevent adding anime to list on non-final episode");
+    }
+
+    // ========================================================================
+    // Episode count on first add is NOT capped (unlike update path)
+    // Production code passes shokoEpisodeNumber directly to UpdateAnime on add.
+    // ========================================================================
+
+    [Theory]
+    [InlineData(999, 12, 999)]  // Exceeds total - not capped on add
+    [InlineData(13, 12, 13)]    // Just over - not capped on add
+    [InlineData(8, 12, 8)]      // Under total - unchanged
+    public void NotInList_EpisodeCount_IsNotCapped(
+        int shokoEpisodeNumber, int _totalEpisodes, int expectedSentCount)
+    {
+        // On the add path, production code passes shokoEpisodeNumber directly
+        // (no capping like the update path does)
+        _ = _totalEpisodes; // context for the test case, not used in add-path logic
+        int sentEpisodeCount = shokoEpisodeNumber;
+
+        sentEpisodeCount.Should().Be(expectedSentCount,
+            "add path should send shokoEpisodeNumber without capping");
+    }
+
+    // ========================================================================
+    // Rollback from non-Completed status
+    // When status is Watching (not Completed), rollback should reduce
+    // episode count but not change status or rewatch flag.
+    // ========================================================================
+
+    [Fact]
+    public void Rollback_FromWatchingStatus_ShouldReduceCountOnly()
+    {
+        Status currentStatus = Status.Watching;
+        int malEpisodeCount = 8;
+        int shokoEpisodeNumber = 8;
+        bool isWatched = false;
+        bool allowRollback = true;
+        bool isCurrentlyRewatching = false;
+
+        bool shouldUpdate = false;
+        int newEpisodeCount = malEpisodeCount;
+        Status? newStatus = null;
+        bool? setRewatching = null;
+
+        if (!isWatched && allowRollback && shokoEpisodeNumber == malEpisodeCount && malEpisodeCount > 0)
+        {
+            shouldUpdate = true;
+            newEpisodeCount = malEpisodeCount - 1;
+
+            if (currentStatus == Status.Completed)
             {
-                maxEpisode = episode;
+                newStatus = Status.Watching;
+                if (!isCurrentlyRewatching)
+                    setRewatching = false;
             }
         }
-        return maxEpisode;
-    }
 
-    [Fact]
-    public void MaxEpisode_Regular_And_Special_Should_Prefer_Regular()
-    {
-        var episodes = new[]
-        {
-            new FakeEpisode(EpisodeType.Episode, 5),
-            new FakeEpisode(EpisodeType.Special, 100),
-        };
-
-        var maxEpisode = PickMaxEpisode(episodes);
-
-        maxEpisode.Should().NotBeNull();
-        maxEpisode!.Type.Should().Be(EpisodeType.Episode);
-        maxEpisode.EpisodeNumber.Should().Be(5);
-    }
-
-    [Fact]
-    public void MaxEpisode_Only_Specials_Should_Use_Special()
-    {
-        var episodes = new[]
-        {
-            new FakeEpisode(EpisodeType.Special, 3),
-        };
-
-        var maxEpisode = PickMaxEpisode(episodes);
-
-        maxEpisode.Should().NotBeNull();
-        maxEpisode!.Type.Should().Be(EpisodeType.Special);
-        maxEpisode.EpisodeNumber.Should().Be(3);
-    }
-
-    [Fact]
-    public void MaxEpisode_Multiple_Regular_Should_Pick_Highest()
-    {
-        var episodes = new[]
-        {
-            new FakeEpisode(EpisodeType.Episode, 5),
-            new FakeEpisode(EpisodeType.Episode, 12),
-        };
-
-        var maxEpisode = PickMaxEpisode(episodes);
-
-        maxEpisode.Should().NotBeNull();
-        maxEpisode!.EpisodeNumber.Should().Be(12);
-    }
-
-    [Fact]
-    public void MaxEpisode_Regular_Ties_Pick_Highest_Number()
-    {
-        var episodes = new[]
-        {
-            new FakeEpisode(EpisodeType.Episode, 3),
-            new FakeEpisode(EpisodeType.Episode, 7),
-        };
-
-        var maxEpisode = PickMaxEpisode(episodes);
-
-        maxEpisode.Should().NotBeNull();
-        maxEpisode!.EpisodeNumber.Should().Be(7);
+        shouldUpdate.Should().BeTrue();
+        newEpisodeCount.Should().Be(7, "should roll back by one");
+        newStatus.Should().BeNull("status should not change when already Watching");
+        setRewatching.Should().BeNull("rewatch flag should not be touched when not rolling back from Completed");
     }
 
     // ========================================================================
-    // DetermineWatchedState boundary tests
+    // EpisodeType filtering (episode comes directly from event now)
     // ========================================================================
 
-    [Fact]
-    public void UserInteraction_Recent_LastPlayed_Should_Be_Watched()
+    [Theory]
+    [InlineData(EpisodeType.Episode, true)]
+    [InlineData(EpisodeType.Special, true)]
+    [InlineData(EpisodeType.Credits, false)]
+    [InlineData(EpisodeType.Trailer, false)]
+    [InlineData(EpisodeType.Parody, false)]
+    [InlineData(EpisodeType.Other, false)]
+    public void EpisodeType_Should_Filter_Correctly(EpisodeType type, bool shouldProcess)
     {
-        var lastPlayedAt = DateTime.Now.AddSeconds(-2);
-        var timeSinceWatched = DateTime.Now - lastPlayedAt;
-        bool isRecentlyWatched = timeSinceWatched.TotalSeconds < 10;
-
-        isRecentlyWatched.Should().BeTrue("2 seconds ago is within the 10-second recency window");
-    }
-
-    [Fact]
-    public void UserInteraction_Old_LastPlayed_Should_Be_Unwatched()
-    {
-        var lastPlayedAt = DateTime.Now.AddMinutes(-5);
-        var timeSinceWatched = DateTime.Now - lastPlayedAt;
-        bool isRecentlyWatched = timeSinceWatched.TotalSeconds < 10;
-
-        isRecentlyWatched.Should().BeFalse("5 minutes ago is outside the 10-second recency window");
-    }
-
-    [Fact]
-    public void UserInteraction_No_LastPlayed_Should_Be_Unwatched()
-    {
-        DateTime? lastPlayedAt = null;
-        bool result = lastPlayedAt.HasValue && (DateTime.Now - lastPlayedAt.Value).TotalSeconds < 10;
-
-        result.Should().BeFalse("null LastPlayedAt means unwatched");
-    }
-
-    [Fact]
-    public void PlaybackEnd_Should_Always_Be_Watched()
-    {
-        const string reason = "PlaybackEnd";
-        bool isWatched = reason == "PlaybackEnd";
-
-        isWatched.Should().BeTrue("PlaybackEnd always means watched");
-    }
-}
-
-// Testable version of the plugin to expose protected methods
-public class TestablePlugin : ShokoAniSyncPlugin
-{
-    private static IApplicationPaths CreateMockApplicationPaths()
-    {
-        var mock = new Mock<IApplicationPaths>();
-        mock.Setup(x => x.PluginsPath).Returns(System.IO.Path.GetTempPath());
-        return mock.Object;
-    }
-
-    public TestablePlugin(IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory,
-        IMemoryCache memoryCache, IMetadataService metadataService, IUserDataService userDataService)
-        : base(CreateMockApplicationPaths(), httpClientFactory, loggerFactory, memoryCache, metadataService, userDataService)
-    {
-    }
-    
-    public bool TestDetermineWatchedState(VideoUserDataSavedEventArgs e)
-    {
-        // Use reflection to call private method
-        var method = typeof(ShokoAniSyncPlugin).GetMethod("DetermineWatchedState", 
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        return (bool)method!.Invoke(this, new object[] { e })!;
+        bool result = type is EpisodeType.Episode or EpisodeType.Special;
+        result.Should().Be(shouldProcess,
+            $"episode type {type} should {(shouldProcess ? "be processed" : "be skipped")}");
     }
 }

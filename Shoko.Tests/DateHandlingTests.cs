@@ -85,19 +85,6 @@ namespace Shoko.Tests
         }
 
         [Theory]
-        [InlineData(0, 1, true)]  // Starting to watch
-        [InlineData(1, 2, false)] // Continuing to watch
-        [InlineData(5, 6, false)] // Mid-series progression
-        public void ShouldSetStartDate_BasedOnEpisodeProgression(int oldCount, int newCount, bool shouldSet)
-        {
-            // Arrange & Act
-            var shouldSetStartDate = (oldCount == 0 && newCount > 0);
-
-            // Assert
-            shouldSetStartDate.Should().Be(shouldSet);
-        }
-
-        [Theory]
         [InlineData(Status.Watching, Status.Completed, true)]  // Completing series
         [InlineData(Status.Watching, Status.Watching, false)]  // Still watching
         [InlineData(Status.Completed, Status.Completed, false)] // Already completed
