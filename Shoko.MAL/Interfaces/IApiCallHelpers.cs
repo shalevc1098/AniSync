@@ -17,6 +17,6 @@ namespace Shoko.AniSync.Interfaces
             bool? isRewatching = null, int? numberOfTimesRewatched = null, DateTime? startDate = null, DateTime? endDate = null, int? score = null, string? alternativeId = null, AnimeOfflineDatabaseHelpers.OfflineDatabaseResponse? ids = null, bool? isShow = null, string? shokoUsername = null);
 
         Task<MalApiCalls.User?> GetUser(string? shokoUsername = null);
-        Task<List<Anime>> GetAnimeList(Status status, int? userId = null);
+        Task<List<Anime>> GetAnimeList(Status status, int? userId = null, string? shokoUsername = null);
     }
 }

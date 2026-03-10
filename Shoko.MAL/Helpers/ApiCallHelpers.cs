@@ -80,7 +80,7 @@ namespace Shoko.AniSync.Helpers
         {
             if (_malApiCalls != null)
             {
-                return await _malApiCalls.GetAnime(id, new[] { "title", "alternative_titles", "start_date", "related_anime", "my_list_status{num_times_rewatched}", "num_episodes" }, shokoUsername);
+                return await _malApiCalls.GetAnime(id, new[] { "title", "alternative_titles", "start_date", "related_anime", "my_list_status{num_times_rewatched,start_date,finish_date}", "num_episodes" }, shokoUsername);
             }
 
             //if (_aniListApiCalls != null)
@@ -341,11 +341,11 @@ namespace Shoko.AniSync.Helpers
             return null;
         }
 
-        public async Task<List<Anime>> GetAnimeList(Status status, int? userId = null)
+        public async Task<List<Anime>> GetAnimeList(Status status, int? userId = null, string? shokoUsername = null)
         {
             if (_malApiCalls != null)
             {
-                var malAnimeList = await _malApiCalls.GetUserAnimeList(status);
+                var malAnimeList = await _malApiCalls.GetUserAnimeList(status, shokoUsername: shokoUsername);
                 return malAnimeList?.Select(animeList => animeList.Anime).Where(anime => anime != null).Cast<Anime>().ToList() ?? new List<Anime>();
             }
 
