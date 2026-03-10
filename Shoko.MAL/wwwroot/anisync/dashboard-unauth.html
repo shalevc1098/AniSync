@@ -4,47 +4,67 @@
 <p style='margin-top: 2rem; color: #4a5568;'>
     Connect your MyAnimeList account to automatically sync your watch history from Shoko Server.
 </p>
+
+<div class='settings-section' style='margin-top: 2rem;'>
+    <h3 style='color: #46bcf2; margin-bottom: 15px;'>API Configuration</h3>
+    <p style='color: #9ca9b3; font-size: 0.9rem; margin-bottom: 15px;'>Enter your MAL API application credentials. You can create an app at <a href='https://myanimelist.net/apiconfig' target='_blank' style='color: #46bcf2;'>myanimelist.net/apiconfig</a>.</p>
+    <div style='background: #252a48; border: 1px solid #2b3556; border-radius: 6px; padding: 12px 15px; margin-bottom: 15px;'>
+        <span style='color: #9ca9b3; font-size: 0.85rem;'>Set this as the <strong style='color: #e1e7f5;'>Redirect URL</strong> in your MAL app settings:</span>
+        <code id='redirectUrlHint' style='display: block; margin-top: 6px; color: #46bcf2; font-size: 0.9rem; word-break: break-all;'></code>
+    </div>
+    <div class='form-group' style='margin-bottom: 15px;'>
+        <label style='color: #e1e7f5; display: block; margin-bottom: 5px; font-weight: 500;'>Client ID</label>
+        <input type='text' id='malClientId' class='form-control' placeholder='Enter MAL Client ID' style='width: 100%; padding: 10px; background: #252a48; border: 1px solid #2b3556; border-radius: 6px; color: #e1e7f5;'>
+    </div>
+    <div class='form-group' style='margin-bottom: 15px;'>
+        <label style='color: #e1e7f5; display: block; margin-bottom: 5px; font-weight: 500;'>Client Secret</label>
+        <input type='password' id='malClientSecret' class='form-control' placeholder='Enter MAL Client Secret' style='width: 100%; padding: 10px; background: #252a48; border: 1px solid #2b3556; border-radius: 6px; color: #e1e7f5;'>
+    </div>
+    <div id='apiConfigStatus' style='display: none; margin-bottom: 15px; padding: 10px; border-radius: 6px; font-size: 0.9rem;'></div>
+    <button id='saveApiConfigBtn' class='btn btn-secondary' style='margin-bottom: 10px;'>Save API Credentials</button>
+</div>
+
 <div style='margin-top: 2rem;'>
-    <button id='connectMalBtn' class='btn btn-primary'>Connect MyAnimeList Account</button>
+    <button id='connectMalBtn' class='btn btn-primary' disabled>Connect MyAnimeList Account</button>
+    <p id='connectHint' style='color: #9ca9b3; font-size: 0.85rem; margin-top: 8px;'>Save your API credentials above to enable the Connect button.</p>
 </div>
 
 <script>
 document.addEventListener('DOMContentLoaded', async function() {
-    // Check for apiSession in localStorage
+    // Show the redirect URL the user needs to configure in their MAL app
+    const redirectHint = document.getElementById('redirectUrlHint');
+    if (redirectHint) {
+        redirectHint.textContent = window.location.origin + '/anisync/authCallback';
+    }
+
     const apiSessionStr = localStorage.getItem('apiSession');
-    
+
     if (!apiSessionStr) {
-        // No session found, redirect to login
-        document.querySelector('.alert-warning').innerHTML = 
+        document.querySelector('.alert-warning').innerHTML =
             '<i class="fas fa-exclamation-triangle" style="margin-right: 8px;"></i>You must log in to Shoko Server first. <a href="/">Go to main page to log in</a>';
         document.getElementById('connectMalBtn').style.display = 'none';
+        document.getElementById('connectHint').style.display = 'none';
         return;
     }
-    
+
     let apiSession;
     let currentUser = null;
-    
+
     try {
         apiSession = JSON.parse(apiSessionStr);
-        
-        // ALWAYS get the username from the API, not from stored session
+
         if (apiSession && apiSession.apikey) {
             const userResponse = await fetch('/api/v3/User/Current', {
-                headers: {
-                    'apikey': apiSession.apikey
-                }
+                headers: { 'apikey': apiSession.apikey }
             });
-            
+
             if (!userResponse.ok) {
                 throw new Error('Invalid API session');
             }
-            
+
             const userData = await userResponse.json();
             if (userData && userData.Username) {
                 currentUser = userData.Username;
-                console.log('Got username from API:', currentUser);
-                
-                // Store username for use in other API calls
                 window.currentShokoUser = currentUser;
                 window.shokoApiKey = apiSession.apikey;
             } else {
@@ -55,22 +75,108 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
     } catch (e) {
         console.error('Session validation failed:', e);
-        document.querySelector('.alert-warning').innerHTML = 
+        document.querySelector('.alert-warning').innerHTML =
             '<i class="fas fa-exclamation-triangle" style="margin-right: 8px;"></i>Your session has expired. <a href="/">Please log in again</a>';
         document.getElementById('connectMalBtn').style.display = 'none';
+        document.getElementById('connectHint').style.display = 'none';
         return;
     }
-    
+
+    // Load existing global settings
+    async function loadGlobalSettings() {
+        try {
+            const response = await fetch('/anisync/api/global-settings', {
+                headers: { 'apikey': apiSession.apikey }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                if (data.malClientId) {
+                    document.getElementById('malClientId').value = data.malClientId;
+                }
+                if (data.malClientSecret) {
+                    document.getElementById('malClientSecret').value = data.malClientSecret;
+                    document.getElementById('malClientSecret').placeholder = 'Enter new secret or leave to keep current';
+                }
+                // Enable connect button if credentials are configured
+                if (data.malClientId) {
+                    document.getElementById('connectMalBtn').disabled = false;
+                    document.getElementById('connectHint').style.display = 'none';
+                }
+            }
+        } catch (err) {
+            console.error('Failed to load global settings:', err);
+        }
+    }
+
+    await loadGlobalSettings();
+
+    // Save API config
+    document.getElementById('saveApiConfigBtn').addEventListener('click', async function() {
+        const clientId = document.getElementById('malClientId').value.trim();
+        const clientSecret = document.getElementById('malClientSecret').value.trim();
+        const statusEl = document.getElementById('apiConfigStatus');
+
+        if (!clientId) {
+            statusEl.style.display = 'block';
+            statusEl.style.background = 'rgba(239, 68, 68, 0.2)';
+            statusEl.style.color = '#ef4444';
+            statusEl.textContent = 'Client ID is required.';
+            return;
+        }
+
+        // Build the body - only include secret if user typed a new one (not masked)
+        const body = { malClientId: clientId };
+        if (clientSecret && !clientSecret.startsWith('***')) {
+            body.malClientSecret = clientSecret;
+        }
+
+        try {
+            const response = await fetch('/anisync/api/global-settings', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'apikey': apiSession.apikey
+                },
+                body: JSON.stringify(body)
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                statusEl.style.display = 'block';
+                statusEl.style.background = 'rgba(34, 197, 94, 0.2)';
+                statusEl.style.color = '#22c55e';
+                statusEl.textContent = 'API credentials saved successfully!';
+                document.getElementById('connectMalBtn').disabled = false;
+                document.getElementById('connectHint').style.display = 'none';
+
+                if (result.reAuthRequired) {
+                    statusEl.textContent += ' Existing MAL connections were cleared due to credential change. Please re-connect.';
+                }
+            } else {
+                statusEl.style.display = 'block';
+                statusEl.style.background = 'rgba(239, 68, 68, 0.2)';
+                statusEl.style.color = '#ef4444';
+                statusEl.textContent = 'Failed to save credentials.';
+            }
+        } catch (err) {
+            console.error('Failed to save global settings:', err);
+            statusEl.style.display = 'block';
+            statusEl.style.background = 'rgba(239, 68, 68, 0.2)';
+            statusEl.style.color = '#ef4444';
+            statusEl.textContent = 'Error saving credentials: ' + err.message;
+        }
+    });
+
+    // Connect button
     document.getElementById('connectMalBtn').addEventListener('click', async function() {
         try {
-            // Encode username as state
-            const state = btoa(currentUser);
-            
-            // Get OAuth URL with state
-            const response = await fetch(`/anisync/buildAuthorizeRequestUrl?provider=Mal&state=${encodeURIComponent(state)}`);
+            const stateObj = JSON.stringify({ user: currentUser, baseUrl: window.location.origin });
+            const state = btoa(stateObj);
+            const response = await fetch(`/anisync/buildAuthorizeRequestUrl?provider=Mal&state=${encodeURIComponent(state)}&baseUrl=${encodeURIComponent(window.location.origin)}`);
+            if (!response.ok) {
+                throw new Error(`Server returned ${response.status}`);
+            }
             const authUrl = await response.text();
-            
-            // Redirect to MAL OAuth
             window.location.href = authUrl;
         } catch (error) {
             console.error('Failed to get auth URL:', error);

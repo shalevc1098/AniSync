@@ -18,6 +18,7 @@ using System.Linq;
 using System.Security.Authentication;
 using System.Text;
 using System.Text.Json;
+using System.Net;
 using System.Threading.Tasks;
 
 namespace Shoko.AniSync.Controllers
@@ -50,6 +51,15 @@ namespace Shoko.AniSync.Controllers
             }
         }
 
+        private string ShokoLocalUrl
+        {
+            get
+            {
+                var localPort = _httpContextAccessor?.HttpContext?.Connection?.LocalPort ?? 8111;
+                return $"http://localhost:{localPort}";
+            }
+        }
+
         public AniSyncController(IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory, IHttpContextAccessor httpContextAccessor, IApplicationPaths applicationPaths, IMemoryCache memoryCache, IUserDataService userDataService, IUserService userService)
         {
             _httpClientFactory = httpClientFactory;
@@ -65,9 +75,10 @@ namespace Shoko.AniSync.Controllers
 
         [HttpGet]
         [Route("buildAuthorizeRequestUrl")]
-        public string BuildAuthorizeRequestUrl(ApiName provider, string? state = null)
+        public string BuildAuthorizeRequestUrl(ApiName provider, string? state = null, string? baseUrl = null)
         {
-            return new ApiAuthentication(provider, _httpClientFactory, _loggerFactory, _memoryCache).BuildAuthorizeRequestUrl(state);
+            var effectiveBaseUrl = baseUrl ?? ShokoApiBaseUrl;
+            return new ApiAuthentication(provider, _httpClientFactory, _loggerFactory, _memoryCache, effectiveBaseUrl).BuildAuthorizeRequestUrl(state);
         }
 
         [HttpGet]
@@ -78,37 +89,56 @@ namespace Shoko.AniSync.Controllers
             try
             {
                 string? shokoUsername = null;
-                
-                // First try to decode from state parameter
+                string? callbackBaseUrl = null;
+
+                // Decode JSON state: { "user": "...", "baseUrl": "..." }
                 if (!string.IsNullOrEmpty(state))
                 {
                     try
                     {
-                        shokoUsername = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(state));
-                        _logger.LogDebug("Decoded user from OAuth state: {Username}", shokoUsername);
+                        var decoded = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(state));
+                        var stateObj = JsonSerializer.Deserialize<JsonElement>(decoded);
+                        if (stateObj.TryGetProperty("user", out var userProp))
+                            shokoUsername = userProp.GetString();
+                        if (stateObj.TryGetProperty("baseUrl", out var baseUrlProp))
+                            callbackBaseUrl = baseUrlProp.GetString();
+                        _logger.LogDebug("Decoded OAuth state - user: {Username}, baseUrl: {BaseUrl}", shokoUsername, callbackBaseUrl);
+                    }
+                    catch (JsonException)
+                    {
+                        // Legacy plain-text state (just username)
+                        try
+                        {
+                            shokoUsername = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(state));
+                            _logger.LogDebug("Decoded legacy OAuth state: {Username}", shokoUsername);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Failed to decode state parameter");
+                        }
                     }
                     catch (Exception ex)
                     {
                         _logger.LogWarning(ex, "Failed to decode state parameter");
                     }
                 }
-                
-                
+
                 // Last resort - try current context
                 if (string.IsNullOrEmpty(shokoUsername))
                 {
                     shokoUsername = GetCurrentShokoUser();
                 }
-                
+
                 if (string.IsNullOrEmpty(shokoUsername))
                 {
                     _logger.LogError("Cannot authenticate MAL without a valid Shoko user. State: {State}", state ?? "null");
                     return Redirect("/anisync?error=No+authenticated+user+found");
                 }
-                
-                _logger.LogInformation("Authenticating MAL for Shoko user: {ShokoUsername}", shokoUsername);
-                new ApiAuthentication(provider, _httpClientFactory, _loggerFactory, _memoryCache).GetToken(code, shokoUsername: shokoUsername);
-                
+
+                var effectiveBaseUrl = callbackBaseUrl ?? ShokoApiBaseUrl;
+                _logger.LogInformation("Authenticating MAL for Shoko user: {ShokoUsername} with baseUrl: {BaseUrl}", shokoUsername, effectiveBaseUrl);
+                new ApiAuthentication(provider, _httpClientFactory, _loggerFactory, _memoryCache, effectiveBaseUrl).GetToken(code, shokoUsername: shokoUsername, state: state);
+
                 return Redirect("/anisync?success=connected");
             }
             catch (AuthenticationException authEx)
@@ -151,8 +181,8 @@ namespace Shoko.AniSync.Controllers
                 
                 // Call Shoko's internal User/Current endpoint
                 // Since we're running as a plugin, we need to use localhost
-                var response = await httpClient.GetAsync($"{ShokoApiBaseUrl}/api/v3/User/Current");
-                
+                using var response = await httpClient.GetAsync($"{ShokoLocalUrl}/api/v3/User/Current");
+
                 if (!response.IsSuccessStatusCode)
                 {
                     return StatusCode((int)response.StatusCode, new { error = "Authentication failed" });
@@ -293,40 +323,34 @@ namespace Shoko.AniSync.Controllers
                 return BadRequest("Invalid settings data");
             }
             
-            var config = Config.GetConfig(_applicationPaths);
-            
             // Get current Shoko user
             var shokoUsername = GetCurrentShokoUser();
-            
+            if (string.IsNullOrEmpty(shokoUsername))
+            {
+                return Unauthorized(new { error = "Authentication required" });
+            }
+
+            var config = Config.GetConfig(_applicationPaths);
+
             _logger.LogInformation("Saving settings for user: {Username}", shokoUsername);
             _logger.LogInformation("Settings model: UpdateNsfw={UpdateNsfw}, EnableAutoSync={EnableAutoSync}", model.UpdateNsfw, model.EnableAutoSync);
-            
-            if (!string.IsNullOrEmpty(shokoUsername))
+
+            config.SetUserSettings(shokoUsername, new UserSettings
             {
-                // Update the settings for this user
-                config.SetUserSettings(shokoUsername, new UserSettings
-                {
-                    UpdateNsfw = model.UpdateNsfw,
-                    EnableAutoSync = model.EnableAutoSync,
-                    SyncOnlyCompleted = model.SyncOnlyCompleted,
-                    SetStartDateFromAnyEpisode = model.SetStartDateFromAnyEpisode,
-                    EnableRewatchDetection = model.EnableRewatchDetection,
-                    AllowRollback = model.AllowRollback,
-                    TitleMatchThreshold = model.TitleMatchThreshold,
-                    UseFuzzyMatching = model.UseFuzzyMatching,
-                    SyncDelaySeconds = model.SyncDelaySeconds,
-                    EnableDebugLogging = model.EnableDebugLogging
-                });
-                
-                config.Save();
-                _logger.LogInformation("Settings saved successfully for user: {Username}", shokoUsername);
-            }
-            else
-            {
-                _logger.LogWarning("Could not save settings - invalid username: {Username}", shokoUsername);
-            }
-            
-            // TempData["SuccessMessage"] = "Settings saved successfully!";
+                UpdateNsfw = model.UpdateNsfw,
+                EnableAutoSync = model.EnableAutoSync,
+                SyncOnlyCompleted = model.SyncOnlyCompleted,
+                SetStartDateFromAnyEpisode = model.SetStartDateFromAnyEpisode,
+                EnableRewatchDetection = model.EnableRewatchDetection,
+                AllowRollback = model.AllowRollback,
+                TitleMatchThreshold = model.TitleMatchThreshold,
+                UseFuzzyMatching = model.UseFuzzyMatching,
+                SyncDelaySeconds = model.SyncDelaySeconds,
+                EnableDebugLogging = model.EnableDebugLogging
+            });
+
+            _logger.LogInformation("Settings saved successfully for user: {Username}", shokoUsername);
+
             return Redirect("/anisync/settings");
         }
         
@@ -395,8 +419,9 @@ namespace Shoko.AniSync.Controllers
                 return Redirect("/anisync/login?error=Not+logged+into+Shoko");
             }
             
-            // Encode the username in the state parameter for OAuth flow
-            var state = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(currentUser));
+            // Encode username and base URL in the state parameter for OAuth flow
+            var stateJson = JsonSerializer.Serialize(new { user = currentUser, baseUrl = ShokoApiBaseUrl });
+            var state = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(stateJson));
             _logger.LogInformation("Starting OAuth flow for user: {Username}", currentUser);
             
             // Also try to store in session as backup
@@ -530,13 +555,15 @@ namespace Shoko.AniSync.Controllers
                 foreach (var user in users)
                 {
                     var username = GetUserProperty(user, "Username")?.ToString() ?? "Unknown";
+                    var encodedUsername = WebUtility.HtmlEncode(username);
                     var selected = username == currentUser ? " selected" : "";
-                    options.AppendLine($"<option value=\"{username}\"{selected}>{username}</option>");
+                    options.AppendLine($"<option value=\"{encodedUsername}\"{selected}>{encodedUsername}</option>");
                 }
                 return options.ToString();
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.LogError(ex, "Error loading Shoko users for dropdown");
                 return "<option>Error loading users</option>";
             }
         }
@@ -544,13 +571,22 @@ namespace Shoko.AniSync.Controllers
         // Removed: Users should not be able to switch Shoko users
         // Authentication is determined by the logged-in HTTP context user
         
-        // Helper method to get current Shoko user from query, header, or request
+        // Helper method to get current Shoko user from query, header, or request.
+        // Result is cached per-request in HttpContext.Items to avoid redundant HTTP calls.
+        private const string ShokoUserCacheKey = "__AniSync_CurrentShokoUser";
         private string? GetCurrentShokoUser()
         {
+            var httpContext = _httpContextAccessor?.HttpContext;
+
+            // Return cached result if we already resolved the user this request
+            if (httpContext?.Items.TryGetValue(ShokoUserCacheKey, out var cached) == true)
+            {
+                return cached as string;
+            }
+
+            string? result = null;
             try
             {
-                var httpContext = _httpContextAccessor?.HttpContext;
-                
                 // Try to get API key from header (passed by JavaScript)
                 var apiKey = httpContext?.Request?.Headers["apikey"].FirstOrDefault();
                 if (!string.IsNullOrEmpty(apiKey))
@@ -558,10 +594,10 @@ namespace Shoko.AniSync.Controllers
                     // Call Shoko's User/Current API synchronously to get the actual username
                     var httpClient = _httpClientFactory.CreateClient();
                     httpClient.DefaultRequestHeaders.Add("apikey", apiKey);
-                    
+
                     try
                     {
-                        var response = httpClient.GetAsync($"{ShokoApiBaseUrl}/api/v3/User/Current").GetAwaiter().GetResult();
+                        using var response = httpClient.GetAsync($"{ShokoLocalUrl}/api/v3/User/Current").GetAwaiter().GetResult();
                         if (response.IsSuccessStatusCode)
                         {
                             var content = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
@@ -569,9 +605,8 @@ namespace Shoko.AniSync.Controllers
                             var userData = Newtonsoft.Json.JsonConvert.DeserializeObject<dynamic>(content);
                             if (userData?.Username != null)
                             {
-                                string username = userData.Username.ToString();
-                                _logger.LogDebug("Got username from API: {Username}", username);
-                                return username;
+                                result = userData.Username.ToString();
+                                _logger.LogDebug("Got username from API: {Username}", result);
                             }
                         }
                     }
@@ -580,32 +615,23 @@ namespace Shoko.AniSync.Controllers
                         _logger.LogWarning(apiEx, "Failed to call User/Current API");
                     }
                 }
-                
-                // Try to get username from query string as fallback
-                var queryUser = httpContext?.Request?.Query["user"].FirstOrDefault();
-                if (!string.IsNullOrEmpty(queryUser))
+
+                if (result == null)
                 {
-                    _logger.LogDebug("Using user from query: {Username}", queryUser);
-                    return queryUser;
+                    _logger.LogDebug("No user found, returning null");
                 }
-                
-                // Try to get from X-Shoko-User header as fallback
-                var headerUser = httpContext?.Request?.Headers["X-Shoko-User"].FirstOrDefault();
-                if (!string.IsNullOrEmpty(headerUser))
-                {
-                    _logger.LogDebug("Using user from header: {Username}", headerUser);
-                    return headerUser;
-                }
-                
-                // No user found - return null instead of hardcoded Default
-                _logger.LogDebug("No user found, returning null");
-                return null;
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to get current Shoko user, returning null");
-                return null;
             }
+
+            // Cache result (even null) for this request
+            if (httpContext != null)
+            {
+                httpContext.Items[ShokoUserCacheKey] = result;
+            }
+            return result;
         }
         
         private object? TryGetUserWatchData(int userID, int videoID)
@@ -684,13 +710,103 @@ namespace Shoko.AniSync.Controllers
             return viewModelHistory;
         }
 
+        [HttpGet]
+        [Route("api/global-settings")]
+        public IActionResult GetGlobalSettings()
+        {
+            var currentUser = GetCurrentShokoUser();
+            if (string.IsNullOrEmpty(currentUser))
+            {
+                return Unauthorized(new { error = "Authentication required" });
+            }
+
+            var gs = GlobalSettings.Load();
+            // Bug 6 fix: handle short secrets safely
+            string maskedSecret;
+            var secret = gs?.MalClientSecret;
+            if (string.IsNullOrEmpty(secret))
+                maskedSecret = string.Empty;
+            else if (secret.Length <= 4)
+                maskedSecret = new string('*', secret.Length);
+            else
+                maskedSecret = new string('*', secret.Length - 4) + secret[^4..];
+
+            return Json(new
+            {
+                malClientId = gs?.MalClientId ?? string.Empty,
+                malClientSecret = maskedSecret
+            });
+        }
+
+        [HttpPost]
+        [Route("api/global-settings")]
+        public IActionResult SaveGlobalSettings([FromBody] GlobalSettingsRequest request)
+        {
+            var currentUser = GetCurrentShokoUser();
+            if (string.IsNullOrEmpty(currentUser))
+            {
+                return Unauthorized(new { error = "Authentication required" });
+            }
+
+            if (request == null)
+                return BadRequest(new { error = "Invalid request body" });
+
+            var existing = GlobalSettings.Load();
+
+            // If the incoming secret is the masked version (starts with *), keep the existing secret
+            var effectiveSecret = request.MalClientSecret;
+            if (!string.IsNullOrEmpty(effectiveSecret) && effectiveSecret.StartsWith('*') && existing != null)
+            {
+                effectiveSecret = existing.MalClientSecret;
+            }
+
+            bool credentialsChanged = existing != null &&
+                (!string.IsNullOrEmpty(existing.MalClientId) || !string.IsNullOrEmpty(existing.MalClientSecret)) &&
+                (existing.MalClientId != request.MalClientId || existing.MalClientSecret != effectiveSecret);
+
+            var gs = new GlobalSettings
+            {
+                MalClientId = request.MalClientId,
+                MalClientSecret = effectiveSecret
+            };
+            gs.Save();
+
+            bool reAuthRequired = false;
+            if (credentialsChanged)
+            {
+                // Clear all MAL provider auth since tokens are tied to the old app credentials
+                var config = Config.GetConfig(_applicationPaths);
+                bool anyCleared = false;
+                foreach (var kvp in config)
+                {
+                    if (kvp.Value?.Providers?.ContainsKey("Mal") == true)
+                    {
+                        kvp.Value.Providers.Remove("Mal");
+                        anyCleared = true;
+                    }
+                }
+                if (anyCleared)
+                {
+                    config.Save();
+                    reAuthRequired = true;
+                    _logger.LogInformation("Cleared MAL auth for all users due to credential change");
+                }
+            }
+
+            _logger.LogInformation("Global settings saved. Credentials changed: {Changed}, Re-auth required: {ReAuth}",
+                credentialsChanged, reAuthRequired);
+
+            return Json(new { success = true, reAuthRequired });
+        }
+
         /// <summary>
         /// API endpoint to get user history in new format
         /// </summary>
         [HttpGet]
         [Route("api/history")]
-        public async Task<IActionResult> GetUserHistoryApi(string? username = null, int? limit = null)
+        public async Task<IActionResult> GetUserHistoryApi(int? limit = null)
         {
+            string? username = null;
             try
             {
                 if (ShokoAniSyncPlugin.SyncHistory == null)
@@ -698,12 +814,9 @@ namespace Shoko.AniSync.Controllers
                     return Json(new { error = "Sync history not available" });
                 }
 
-                // If no username provided, get from apikey header
-                if (string.IsNullOrEmpty(username))
-                {
-                    username = GetCurrentShokoUser();
-                    _logger.LogInformation("Getting history for user from apikey: {Username}", username ?? "null");
-                }
+                // Always use authenticated user - never accept username from query params
+                username = GetCurrentShokoUser();
+                _logger.LogInformation("Getting history for user from apikey: {Username}", username ?? "null");
 
                 if (string.IsNullOrEmpty(username))
                 {
@@ -820,6 +933,12 @@ namespace Shoko.AniSync.Controllers
         {
             try
             {
+                var currentUser = GetCurrentShokoUser();
+                if (string.IsNullOrEmpty(currentUser) || !currentUser.Equals(username, StringComparison.OrdinalIgnoreCase))
+                {
+                    return Unauthorized(new { error = "You can only clear your own history" });
+                }
+
                 if (ShokoAniSyncPlugin.SyncHistory == null)
                 {
                     return Json(new { error = "Sync history not available" });
@@ -910,10 +1029,10 @@ namespace Shoko.AniSync.Controllers
                 }
             }
             
-            var dashboardContent = isAuthenticated 
+            var dashboardContent = isAuthenticated
                 ? LoadEmbeddedResource("dashboard-auth.html")
-                    .Replace("{USERNAME}", username)
-                    .Replace("{SHOKO_USER}", shokoUsername)
+                    .Replace("{USERNAME}", WebUtility.HtmlEncode(username))
+                    .Replace("{SHOKO_USER}", WebUtility.HtmlEncode(shokoUsername))
                     .Replace("{SHOKO_USER_OPTIONS}", GetShokoUserOptions(shokoUsername))
                     .Replace("{TOTAL_ANIME}", totalAnime)
                     .Replace("{SYNCED_ANIME}", syncedAnime)
@@ -939,8 +1058,9 @@ namespace Shoko.AniSync.Controllers
                 // Build user options for dropdown
                 foreach (var user in users)
                 {
+                    var encodedName = WebUtility.HtmlEncode(user.Username);
                     var selected = user.Username == username ? "selected" : "";
-                    userOptions.AppendLine($"<option value='{user.Username}' {selected}>👤 {user.Username}</option>");
+                    userOptions.AppendLine($"<option value='{encodedName}' {selected}>{encodedName}</option>");
                 }
                 
                 // Add option to add new account
@@ -951,9 +1071,9 @@ namespace Shoko.AniSync.Controllers
                 var shokoUsernameInitial = shokoUsername.Length > 0 ? shokoUsername.Substring(0, 1).ToUpper() : "U";
                 
                 navbar = LoadEmbeddedResource("navbar-auth.html")
-                    .Replace("{USERNAME}", username)
-                    .Replace("{SHOKO_USERNAME}", shokoUsername)
-                    .Replace("{SHOKO_USERNAME_INITIAL}", shokoUsernameInitial)
+                    .Replace("{USERNAME}", WebUtility.HtmlEncode(username))
+                    .Replace("{SHOKO_USERNAME}", WebUtility.HtmlEncode(shokoUsername))
+                    .Replace("{SHOKO_USERNAME_INITIAL}", WebUtility.HtmlEncode(shokoUsernameInitial))
                     .Replace("{USER_OPTIONS}", userOptions.ToString());
             }
             else
@@ -1005,7 +1125,7 @@ namespace Shoko.AniSync.Controllers
                 .Replace("{ENABLE_DEBUG_LOGGING_CHECKED}", enableDebugLogging ? "checked" : "")
                 .Replace("{CONNECTION_STATUS}", isAuthenticated ? "Connected" : "Not Connected")
                 .Replace("{CONNECTION_STATUS_CLASS}", isAuthenticated ? "status-connected" : "status-disconnected")
-                .Replace("{USERNAME}", isAuthenticated ? username : "Connect to enable syncing")
+                .Replace("{USERNAME}", isAuthenticated ? WebUtility.HtmlEncode(username) : "Connect to enable syncing")
                 .Replace("{LAST_REFRESH}", isAuthenticated ? "Not available" : "Connect to MAL first")
                 .Replace("{USER_SETTINGS_INFO}", 
                     isAuthenticated && hasUserSettings ? 
@@ -1040,15 +1160,15 @@ namespace Shoko.AniSync.Controllers
                 entriesHtml.AppendLine($@"
                     <div class='history-entry {statusClass}'>
                         <div class='entry-header'>
-                            <div class='entry-title'>{entry.AnimeName}</div>
-                            <div class='entry-time'>{timeDisplay}</div>
+                            <div class='entry-title'>{WebUtility.HtmlEncode(entry.AnimeName)}</div>
+                            <div class='entry-time'>{WebUtility.HtmlEncode(timeDisplay)}</div>
                         </div>
                         <div class='entry-details'>
                             <div class='entry-detail'>Episode {entry.Episode}</div>
-                            <div class='entry-detail'>Action: {entry.Action}</div>
+                            <div class='entry-detail'>Action: {WebUtility.HtmlEncode(entry.Action)}</div>
                             <span class='entry-status status-{statusClass.ToLower()}'>{statusText}</span>
                         </div>
-                        {(!string.IsNullOrEmpty(entry.Details) ? $"<div class='entry-message'>{entry.Details}</div>" : "")}
+                        {(!string.IsNullOrEmpty(entry.Details) ? $"<div class='entry-message'>{WebUtility.HtmlEncode(entry.Details)}</div>" : "")}
                     </div>");
             }
             

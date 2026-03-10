@@ -36,9 +36,11 @@ document.addEventListener('DOMContentLoaded', async function() {
                         // Check for avatar
                         if (userData.Avatar || userData.AvatarUrl || userData.avatar) {
                             const avatarUrl = userData.Avatar || userData.AvatarUrl || userData.avatar;
-                            userAvatar.src = avatarUrl;
-                            userAvatar.style.display = 'inline-block';
-                            userAvatarFallback.style.display = 'none';
+                            if (avatarUrl && (avatarUrl.startsWith('http://') || avatarUrl.startsWith('https://') || avatarUrl.startsWith('/'))) {
+                                userAvatar.src = avatarUrl;
+                                userAvatar.style.display = 'inline-block';
+                                userAvatarFallback.style.display = 'none';
+                            }
                         } else {
                             // Use first letter of username as fallback
                             if (userData.Username) {

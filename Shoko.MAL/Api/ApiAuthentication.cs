@@ -24,18 +24,21 @@ namespace Shoko.AniSync.Api
         private readonly ProviderApiAuth _providerApiAuth;
         private readonly string _authApiUrl;
         private readonly string _redirectUrl;
-        private static readonly string _codeChallenge = GenerateCodeChallenge();
 
-        private readonly string _clientId = "cb2cb041c1452a990a065d5e7ecdf89b";
-        private readonly string _clientSecret = "REDACTED";
+        private readonly string _clientId;
+        private readonly string _clientSecret;
 
-        public ApiAuthentication(ApiName provider, IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory, IMemoryCache? memoryCache = null)
+        public ApiAuthentication(ApiName provider, IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory, IMemoryCache? memoryCache = null, string? baseUrl = null)
         {
             _provider = provider;
             _httpClientFactory = httpClientFactory;
             _loggerFactory = loggerFactory;
             _logger = _loggerFactory.CreateLogger<ApiAuthentication>();
             _memoryCache = memoryCache ?? new MemoryCache(new MemoryCacheOptions());
+
+            var gs = GlobalSettings.Load();
+            _clientId = gs?.MalClientId ?? string.Empty;
+            _clientSecret = gs?.MalClientSecret ?? string.Empty;
 
             _providerApiAuth =  new ProviderApiAuth()
             {
@@ -50,7 +53,7 @@ namespace Shoko.AniSync.Api
                 ApiName.Mal => "https://myanimelist.net/v1/oauth2",
                 _ => throw new ArgumentOutOfRangeException(nameof(provider), provider, null),
             };
-            _redirectUrl = "http://localhost:8111/AniSync/authCallback";
+            _redirectUrl = baseUrl?.TrimEnd('/') + "/anisync/authCallback";
         }
 
         public string BuildAuthorizeRequestUrl(string? state = null)
@@ -58,7 +61,12 @@ namespace Shoko.AniSync.Api
             switch (_provider)
             {
                 case ApiName.Mal:
-                    var url = $"{_authApiUrl}/authorize?response_type=code&client_id={_providerApiAuth.ClientId}&code_challenge={_codeChallenge}&redirect_uri={_redirectUrl}";
+                    // Generate a unique PKCE code challenge per authorization request
+                    var codeChallenge = GenerateCodeChallenge();
+                    var cacheKey = $"pkce_{state ?? "default"}";
+                    _memoryCache.Set(cacheKey, codeChallenge, TimeSpan.FromMinutes(10));
+
+                    var url = $"{_authApiUrl}/authorize?response_type=code&client_id={_providerApiAuth.ClientId}&code_challenge={codeChallenge}&redirect_uri={_redirectUrl}";
                     if (!string.IsNullOrEmpty(state))
                     {
                         url += $"&state={Uri.EscapeDataString(state)}";
@@ -69,7 +77,7 @@ namespace Shoko.AniSync.Api
             }
         }
 
-        public UserApiAuth GetToken(string? code = null, string? refreshToken = null, string? shokoUsername = null)
+        public UserApiAuth GetToken(string? code = null, string? refreshToken = null, string? shokoUsername = null, string? state = null)
         {
             var client = _httpClientFactory.CreateClient();
 
@@ -95,7 +103,16 @@ namespace Shoko.AniSync.Api
                     };
                 if (_provider == ApiName.Mal)
                 {
-                    content.Add(new KeyValuePair<string, string>("code_verifier", _codeChallenge));
+                    // Retrieve the per-session PKCE code verifier from cache
+                    var cacheKey = $"pkce_{state ?? "default"}";
+                    var codeVerifier = _memoryCache.Get<string>(cacheKey);
+                    if (string.IsNullOrEmpty(codeVerifier))
+                    {
+                        _logger.LogError("PKCE code verifier not found in cache for state {State}. OAuth session may have expired.", state ?? "default");
+                        throw new System.Security.Authentication.AuthenticationException("OAuth session expired. Please try authenticating again.");
+                    }
+                    content.Add(new KeyValuePair<string, string>("code_verifier", codeVerifier));
+                    _memoryCache.Remove(cacheKey); // Single use
                 }
                 var dict = content.ToDictionary(k => k.Key, v => v.Value);
                 _logger.LogInformation("Requesting token from {Url} with form fields: {@Fields}",
@@ -103,7 +120,7 @@ namespace Shoko.AniSync.Api
                 formUrlEncodedContent = new FormUrlEncodedContent(content.ToArray());
             }
 
-            var response = client.PostAsync(new Uri($"{_authApiUrl}/token"), formUrlEncodedContent).Result;
+            using var response = client.PostAsync(new Uri($"{_authApiUrl}/token"), formUrlEncodedContent).Result;
 
             if (response.IsSuccessStatusCode)
             {
@@ -127,36 +144,46 @@ namespace Shoko.AniSync.Api
                     if (_provider is ApiName.Mal)
                     {
                         newUserApiAuth.RefreshToken = tokenResponse.refresh_token ?? string.Empty;
-                        
+
                         // Log token expiration info
                         if (tokenResponse.expires_in.HasValue)
                         {
-                            _logger.LogInformation("Token expires in {Seconds} seconds ({Days} days)", 
-                                tokenResponse.expires_in.Value, 
+                            _logger.LogInformation("Token expires in {Seconds} seconds ({Days} days)",
+                                tokenResponse.expires_in.Value,
                                 tokenResponse.expires_in.Value / 86400);
                         }
-                        
-                        // Need to temporarily save auth to make API call to get username
-                        // This will be properly saved later with the username
-                        
-                        try
+
+                        if (refreshToken != null)
                         {
-                            // Temporarily save auth to make API call
-                            if (!string.IsNullOrEmpty(shokoUsername))
+                            // Token refresh: preserve existing username from config
+                            var existingAuth = pluginConfig.GetAuthForShokoUser(shokoUsername, _provider);
+                            if (!string.IsNullOrEmpty(existingAuth?.Username))
                             {
-                                pluginConfig.SetAuthForShokoUser(shokoUsername, _provider, newUserApiAuth);
-                                var malApi = new MalApiCalls(_httpClientFactory, _loggerFactory, _memoryCache, new Delayer());
-                                var userInfo = malApi.GetUserInformation(shokoUsername).Result;
-                                if (userInfo != null)
-                                {
-                                    newUserApiAuth.Username = userInfo.Name;
-                                    _logger.LogInformation("Retrieved MAL username: {Username}", userInfo.Name);
-                                }
+                                newUserApiAuth.Username = existingAuth.Username;
+                                _logger.LogInformation("Preserved existing MAL username on token refresh: {Username}", existingAuth.Username);
                             }
                         }
-                        catch (Exception ex)
+                        else
                         {
-                            _logger.LogError(ex, "Failed to retrieve MAL username");
+                            // Initial auth: fetch MAL username from API
+                            try
+                            {
+                                if (!string.IsNullOrEmpty(shokoUsername))
+                                {
+                                    pluginConfig.SetAuthForShokoUser(shokoUsername, _provider, newUserApiAuth);
+                                    var malApi = new MalApiCalls(_httpClientFactory, _loggerFactory, _memoryCache, new Delayer());
+                                    var userInfo = malApi.GetUserInformation(shokoUsername).Result;
+                                    if (userInfo != null)
+                                    {
+                                        newUserApiAuth.Username = userInfo.Name;
+                                        _logger.LogInformation("Retrieved MAL username: {Username}", userInfo.Name);
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogError(ex, "Failed to retrieve MAL username");
+                            }
                         }
                     }
 

@@ -13,13 +13,15 @@ namespace Shoko.AniSync
         public static Plugin? Instance { get; private set; }
 
         public Config Config { get; private set; } = null!;
+        public string PluginDirectory { get; private set; } = string.Empty;
 
         public Plugin() {}
 
         public Plugin(IApplicationPaths applicationPaths, ILoggerFactory loggerFactory)
         {
             Instance = this;
-            Config = new Config(Path.Combine(applicationPaths.PluginsPath, Name, "config.json"));
+            PluginDirectory = Path.Combine(applicationPaths.PluginsPath, Name);
+            Config = new Config(Path.Combine(PluginDirectory, "config.json"));
 
             loggerFactory.CreateLogger<Plugin>().LogInformation("Plugin loaded");
         }

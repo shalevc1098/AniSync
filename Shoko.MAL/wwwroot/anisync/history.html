@@ -31,10 +31,10 @@
         </div>
         
         <div class='history-filters'>
-            <button class='filter-btn active' onclick='filterHistory("all")'>All</button>
-            <button class='filter-btn' onclick='filterHistory("success")'>Success</button>
-            <button class='filter-btn' onclick='filterHistory("failed")'>Failed</button>
-            <button class='filter-btn' onclick='filterHistory("today")'>Today</button>
+            <button class='filter-btn active' onclick='filterHistory("all", this)'>All</button>
+            <button class='filter-btn' onclick='filterHistory("success", this)'>Success</button>
+            <button class='filter-btn' onclick='filterHistory("failed", this)'>Failed</button>
+            <button class='filter-btn' onclick='filterHistory("today", this)'>Today</button>
         </div>
         
         <div class='history-list' id='history-list'>
@@ -302,6 +302,7 @@ function displayHistoryData(data) {
     
     // Check if we have any history
     if (!data.history || data.history.length === 0) {
+        document.getElementById('history-content').style.display = 'block';
         document.getElementById('no-history').style.display = 'block';
         return;
     }
@@ -372,33 +373,34 @@ function createHistoryEntry(entry) {
         }
     }
     
+    const safeImageUrl = imageUrl ? imageUrl.replace(/'/g, '%27').replace(/</g, '%3C').replace(/>/g, '%3E') : null;
     div.innerHTML = `
-        ${imageUrl ? `
+        ${safeImageUrl ? `
         <div class='entry-thumbnail'>
-            <img src='${imageUrl}' alt='${escapeHtml(entry.anime_title || 'Episode thumbnail')}' 
+            <img src='${safeImageUrl}' alt='${escapeHtml(entry.anime_title || 'Episode thumbnail')}'
                  onerror="this.style.display='none'; this.parentElement.style.display='none';">
         </div>
         ` : ''}
         <div class='entry-content'>
             <div class='entry-header'>
                 <div class='entry-title'>${escapeHtml(entry.anime_title || 'Unknown Anime')}</div>
-                <div class='entry-time' title='${timeFormatted}'>${timeRelative}</div>
+                <div class='entry-time' title='${escapeHtml(timeFormatted)}'>${timeRelative}</div>
             </div>
             <div class='entry-details'>
             <div class='entry-detail'>
                 <i class='fas ${actionIcon}'></i>
-                <span>${capitalizeFirst(entry.action || 'unknown')}</span>
+                <span>${escapeHtml(capitalizeFirst(entry.action || 'unknown'))}</span>
             </div>
             ${entry.episode_number ? `
             <div class='entry-detail'>
                 <i class='fas fa-tv'></i>
-                <span>Episode ${entry.episode_number}</span>
+                <span>Episode ${escapeHtml(String(entry.episode_number))}</span>
             </div>
             ` : ''}
             ${entry.status ? `
             <div class='entry-detail'>
                 <i class='fas fa-list'></i>
-                <span>${formatStatus(entry.status)}</span>
+                <span>${escapeHtml(formatStatus(entry.status))}</span>
             </div>
             ` : ''}
             <div class='entry-status ${statusClass}'>${statusText}</div>
@@ -480,12 +482,12 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-function filterHistory(filter) {
+function filterHistory(filter, btn) {
     // Update active button
-    document.querySelectorAll('.filter-btn').forEach(btn => {
-        btn.classList.remove('active');
+    document.querySelectorAll('.filter-btn').forEach(b => {
+        b.classList.remove('active');
     });
-    event.target.classList.add('active');
+    btn.classList.add('active');
     
     // Filter history entries
     const entries = document.querySelectorAll('.history-entry');

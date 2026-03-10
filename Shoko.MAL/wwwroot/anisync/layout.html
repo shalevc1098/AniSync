@@ -240,14 +240,16 @@
                     // Store globally for other scripts to use
                     window.shokoApiKey = apiSession.apikey;
                     
-                    // Make all fetch requests include the apikey header
+                    // Make same-origin fetch requests include the apikey header
                     const originalFetch = window.fetch;
                     window.fetch = function(...args) {
                         let [url, options = {}] = args;
-                        if (!options.headers) {
-                            options.headers = {};
-                        }
-                        if (window.shokoApiKey) {
+                        // Only add API key to same-origin or relative URL requests
+                        const isSameOrigin = typeof url === 'string' && (url.startsWith('/') || url.startsWith(window.location.origin));
+                        if (isSameOrigin && window.shokoApiKey) {
+                            if (!options.headers) {
+                                options.headers = {};
+                            }
                             options.headers['apikey'] = window.shokoApiKey;
                         }
                         return originalFetch.call(this, url, options);

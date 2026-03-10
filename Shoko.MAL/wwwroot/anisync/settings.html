@@ -99,6 +99,28 @@
     </div>
     
     <div class='settings-section' style='margin-top: 40px;'>
+        <h3>API Configuration</h3>
+        <div class='alert alert-warning' style='margin-bottom: 15px;'>
+            <i class="fas fa-exclamation-triangle" style="margin-right: 8px;"></i>Changing credentials will disconnect existing MAL accounts and require re-authentication.
+        </div>
+        <div style='background: #252a48; border: 1px solid #2b3556; border-radius: 6px; padding: 12px 15px; margin-bottom: 15px;'>
+            <span style='color: #9ca9b3; font-size: 0.85rem;'>Set this as the <strong style='color: #e1e7f5;'>Redirect URL</strong> in your MAL app settings:</span>
+            <code id='settingsRedirectUrlHint' style='display: block; margin-top: 6px; color: #46bcf2; font-size: 0.9rem; word-break: break-all;'></code>
+        </div>
+        <div class='form-group' style='margin-bottom: 15px;'>
+            <label style='color: #e1e7f5; display: block; margin-bottom: 5px; font-weight: 500;'>Client ID</label>
+            <input type='text' id='settingsMalClientId' class='form-control' placeholder='Enter MAL Client ID' style='width: 100%; padding: 10px; background: #252a48; border: 1px solid #2b3556; border-radius: 6px; color: #e1e7f5;'>
+            <small style='display: block; margin-top: 5px; color: #9ca9b3;'>Create an app at <a href='https://myanimelist.net/apiconfig' target='_blank' style='color: #46bcf2;'>myanimelist.net/apiconfig</a></small>
+        </div>
+        <div class='form-group' style='margin-bottom: 15px;'>
+            <label style='color: #e1e7f5; display: block; margin-bottom: 5px; font-weight: 500;'>Client Secret</label>
+            <input type='password' id='settingsMalClientSecret' class='form-control' placeholder='Enter MAL Client Secret' style='width: 100%; padding: 10px; background: #252a48; border: 1px solid #2b3556; border-radius: 6px; color: #e1e7f5;'>
+        </div>
+        <div id='settingsApiConfigStatus' style='display: none; margin-bottom: 15px; padding: 10px; border-radius: 6px; font-size: 0.9rem;'></div>
+        <button id='saveApiConfigBtn' class='btn btn-secondary'>Save API Credentials</button>
+    </div>
+
+    <div class='settings-section' style='margin-top: 40px;'>
         <h3>Connection Status</h3>
         <div class='connection-status'>
             <p>MyAnimeList: <span class='status-badge {CONNECTION_STATUS_CLASS}'>{CONNECTION_STATUS}</span></p>
@@ -121,7 +143,12 @@ document.addEventListener('DOMContentLoaded', function() {
             e.preventDefault();
             
             console.log('=== SAVING SETTINGS ===');
-            
+
+            function numOrDefault(val, fallback) {
+                const n = Number(val);
+                return isNaN(n) ? fallback : n;
+            }
+
             // Get all settings values by ID
             const settings = {
                 UpdateNsfw: document.getElementById('UpdateNsfw').checked,
@@ -130,9 +157,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 SetStartDateFromAnyEpisode: document.getElementById('SetStartDateFromAnyEpisode').checked,
                 EnableRewatchDetection: document.getElementById('EnableRewatchDetection').checked,
                 AllowRollback: document.getElementById('AllowRollback').checked,
-                TitleMatchThreshold: parseFloat(document.getElementById('TitleMatchThreshold').value) || 0.8,
+                TitleMatchThreshold: numOrDefault(document.getElementById('TitleMatchThreshold').value, 0.8),
                 UseFuzzyMatching: document.getElementById('UseFuzzyMatching').checked,
-                SyncDelaySeconds: parseInt(document.getElementById('SyncDelaySeconds').value) || 5,
+                SyncDelaySeconds: numOrDefault(document.getElementById('SyncDelaySeconds').value, 5),
                 EnableDebugLogging: document.getElementById('EnableDebugLogging').checked
             };
             
@@ -272,6 +299,96 @@ document.addEventListener('DOMContentLoaded', function() {
                     console.error('Error during logout:', error);
                     alert('Error during logout: ' + error.message);
                 }
+            }
+        });
+    }
+
+    // --- API Configuration (Global Settings) ---
+    function getApiKey() {
+        try {
+            const s = localStorage.getItem('apiSession');
+            if (s) { return JSON.parse(s).apikey || ''; }
+        } catch (_) {}
+        return '';
+    }
+
+    // Show the redirect URL hint
+    const settingsRedirectHint = document.getElementById('settingsRedirectUrlHint');
+    if (settingsRedirectHint) {
+        settingsRedirectHint.textContent = window.location.origin + '/anisync/authCallback';
+    }
+
+    // Load global settings into the API config fields
+    (async function loadApiConfig() {
+        const apikey = getApiKey();
+        if (!apikey) return;
+        try {
+            const resp = await fetch('/anisync/api/global-settings', { headers: { 'apikey': apikey } });
+            if (resp.ok) {
+                const data = await resp.json();
+                const idEl = document.getElementById('settingsMalClientId');
+                const secEl = document.getElementById('settingsMalClientSecret');
+                if (idEl && data.malClientId) idEl.value = data.malClientId;
+                if (secEl && data.malClientSecret) {
+                    secEl.value = data.malClientSecret;
+                    secEl.placeholder = 'Enter new secret or leave to keep current';
+                }
+            }
+        } catch (e) { console.error('Failed to load API config:', e); }
+    })();
+
+    const saveApiBtn = document.getElementById('saveApiConfigBtn');
+    if (saveApiBtn) {
+        saveApiBtn.addEventListener('click', async function(e) {
+            e.preventDefault();
+            const clientId = document.getElementById('settingsMalClientId').value.trim();
+            const clientSecret = document.getElementById('settingsMalClientSecret').value.trim();
+            const statusEl = document.getElementById('settingsApiConfigStatus');
+
+            if (!clientId) {
+                statusEl.style.display = 'block';
+                statusEl.style.background = 'rgba(239, 68, 68, 0.2)';
+                statusEl.style.color = '#ef4444';
+                statusEl.textContent = 'Client ID is required.';
+                return;
+            }
+
+            const body = { malClientId: clientId };
+            if (clientSecret && !clientSecret.startsWith('***')) {
+                body.malClientSecret = clientSecret;
+            }
+
+            const apikey = getApiKey();
+            try {
+                const resp = await fetch('/anisync/api/global-settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'apikey': apikey },
+                    body: JSON.stringify(body)
+                });
+                if (resp.ok) {
+                    const result = await resp.json();
+                    statusEl.style.display = 'block';
+                    statusEl.style.background = 'rgba(34, 197, 94, 0.2)';
+                    statusEl.style.color = '#22c55e';
+                    statusEl.textContent = 'API credentials saved successfully!';
+                    if (result.reAuthRequired) {
+                        statusEl.style.background = 'rgba(234, 179, 8, 0.2)';
+                        statusEl.style.color = '#eab308';
+                        statusEl.textContent = 'Credentials changed. All MAL connections have been cleared. Redirecting to dashboard to re-connect...';
+                        setTimeout(function() { window.location.href = '/anisync'; }, 2500);
+                    }
+                } else {
+                    statusEl.style.display = 'block';
+                    statusEl.style.background = 'rgba(239, 68, 68, 0.2)';
+                    statusEl.style.color = '#ef4444';
+                    statusEl.textContent = 'Failed to save credentials.';
+                }
+            } catch (err) {
+                console.error('Failed to save API config:', err);
+                statusEl.style.display = 'block';
+                statusEl.style.background = 'rgba(239, 68, 68, 0.2)';
+                statusEl.style.color = '#ef4444';
+                statusEl.textContent = 'Error saving credentials: ' + err.message;
             }
         });
     }
