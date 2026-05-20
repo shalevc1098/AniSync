@@ -1,15 +1,15 @@
 <div class='card'>
     <h1 class='card-title'><i class="fas fa-cog" style="margin-right: 8px;"></i>Settings</h1>
     
-    {USER_SETTINGS_INFO}
-    
+    <div id='settings-info'></div>
+
     <div id='settings-container'>
         <div class='settings-section'>
             <h3>Sync Configuration</h3>
             
             <div class='form-group'>
                 <label class='checkbox-label'>
-                    <input type='checkbox' id='UpdateNsfw' {UPDATE_NSFW_CHECKED}>
+                    <input type='checkbox' id='UpdateNsfw'>
                     <span>Sync NSFW Content</span>
                 </label>
                 <small>Include adult/NSFW anime in synchronization</small>
@@ -17,7 +17,7 @@
             
             <div class='form-group'>
                 <label class='checkbox-label'>
-                    <input type='checkbox' id='EnableAutoSync' {ENABLE_AUTO_SYNC_CHECKED}>
+                    <input type='checkbox' id='EnableAutoSync'>
                     <span>Enable Automatic Sync</span>
                 </label>
                 <small>Automatically sync watched episodes to MyAnimeList</small>
@@ -25,7 +25,7 @@
             
             <div class='form-group'>
                 <label class='checkbox-label'>
-                    <input type='checkbox' id='SyncOnlyCompleted' {SYNC_ONLY_COMPLETED_CHECKED}>
+                    <input type='checkbox' id='SyncOnlyCompleted'>
                     <span>Sync Only Completed Episodes</span>
                 </label>
                 <small>Only sync episodes marked as fully watched</small>
@@ -33,7 +33,7 @@
             
             <div class='form-group'>
                 <label class='checkbox-label'>
-                    <input type='checkbox' id='SetStartDateFromAnyEpisode' {SET_START_DATE_FROM_ANY_EPISODE_CHECKED}>
+                    <input type='checkbox' id='SetStartDateFromAnyEpisode'>
                     <span>Flexible Start Date</span>
                 </label>
                 <small>When enabled: Sets start date when first watching any episode<br>When disabled (default): Only sets start date when first watching episode 1</small>
@@ -41,7 +41,7 @@
             
             <div class='form-group'>
                 <label class='checkbox-label'>
-                    <input type='checkbox' id='EnableRewatchDetection' {ENABLE_REWATCH_DETECTION_CHECKED}>
+                    <input type='checkbox' id='EnableRewatchDetection'>
                     <span>Enable Rewatch Detection</span>
                 </label>
                 <small>Detect and track when you're rewatching a series</small>
@@ -49,7 +49,7 @@
             
             <div class='form-group'>
                 <label class='checkbox-label'>
-                    <input type='checkbox' id='AllowRollback' {ALLOW_ROLLBACK_CHECKED}>
+                    <input type='checkbox' id='AllowRollback'>
                     <span>Allow Episode Rollback</span>
                 </label>
                 <small>Allow reducing episode count on MAL if local count is lower</small>
@@ -61,13 +61,13 @@
             
             <div class='form-group'>
                 <label>Title Match Threshold</label>
-                <input type='number' id='TitleMatchThreshold' value='{TITLE_MATCH_THRESHOLD}' min='0' max='1' step='0.1' class='form-control'>
+                <input type='number' id='TitleMatchThreshold' value='0.8' min='0' max='1' step='0.1' class='form-control'>
                 <small>Minimum similarity score for title matching (0.0 - 1.0)</small>
             </div>
             
             <div class='form-group'>
                 <label class='checkbox-label'>
-                    <input type='checkbox' id='UseFuzzyMatching' {USE_FUZZY_MATCHING_CHECKED}>
+                    <input type='checkbox' id='UseFuzzyMatching'>
                     <span>Use Fuzzy Title Matching</span>
                 </label>
                 <small>Enable flexible title matching for better results</small>
@@ -79,13 +79,13 @@
             
             <div class='form-group'>
                 <label>Sync Delay (seconds)</label>
-                <input type='number' id='SyncDelaySeconds' value='{SYNC_DELAY_SECONDS}' min='0' max='60' class='form-control'>
+                <input type='number' id='SyncDelaySeconds' value='5' min='0' max='60' class='form-control'>
                 <small>Delay between sync operations to avoid rate limiting</small>
             </div>
             
             <div class='form-group'>
                 <label class='checkbox-label'>
-                    <input type='checkbox' id='EnableDebugLogging' {ENABLE_DEBUG_LOGGING_CHECKED}>
+                    <input type='checkbox' id='EnableDebugLogging'>
                     <span>Enable Debug Logging</span>
                 </label>
                 <small>Output detailed debug information to logs</small>
@@ -123,9 +123,9 @@
     <div class='settings-section' style='margin-top: 40px;'>
         <h3>Connection Status</h3>
         <div class='connection-status'>
-            <p>MyAnimeList: <span class='status-badge {CONNECTION_STATUS_CLASS}'>{CONNECTION_STATUS}</span></p>
-            <p>Username: <strong>{USERNAME}</strong></p>
-            <p>Last Refresh: {LAST_REFRESH}</p>
+            <p>MyAnimeList: <span class='status-badge status-disconnected' id='connStatusBadge'>Not Connected</span></p>
+            <p>Username: <strong id='connUsername'>Connect to enable syncing</strong></p>
+            <p>Last Refresh: <span id='connLastRefresh'>Connect to MAL first</span></p>
             <div style='margin-top: 15px; display: flex; gap: 10px;'>
                 <button id='logoutBtn' class='btn btn-danger'><i class="fas fa-sign-out-alt" style="margin-right: 8px;"></i>Logout</button>
                 <button id='refreshTokenBtn' class='btn btn-secondary'><i class="fas fa-sync" style="margin-right: 8px;"></i>Refresh Connection</button>
@@ -135,7 +135,62 @@
 </div>
 
 <script>
+// Load this user's settings + MAL connection status from the JSON API (apikey header).
+async function loadUserSettings() {
+    const info = document.getElementById('settings-info');
+    try {
+        const response = await fetch('/anisync/api/user/settings', {
+            headers: { 'apikey': window.shokoApiKey || '' }
+        });
+
+        if (response.status === 401) {
+            info.innerHTML = '<div class="alert alert-warning"><i class="fas fa-info-circle" style="margin-right: 8px;"></i>Log in to Shoko Server to manage your sync settings.</div>';
+            return;
+        }
+        if (!response.ok) return;
+
+        const data = await response.json();
+        const s = data.settings || {};
+
+        const setChecked = (id, v) => { const el = document.getElementById(id); if (el) el.checked = !!v; };
+        const setValue = (id, v) => { const el = document.getElementById(id); if (el && v !== undefined && v !== null) el.value = v; };
+
+        setChecked('UpdateNsfw', s.updateNsfw);
+        setChecked('EnableAutoSync', s.enableAutoSync);
+        setChecked('SyncOnlyCompleted', s.syncOnlyCompleted);
+        setChecked('SetStartDateFromAnyEpisode', s.setStartDateFromAnyEpisode);
+        setChecked('EnableRewatchDetection', s.enableRewatchDetection);
+        setChecked('AllowRollback', s.allowRollback);
+        setChecked('UseFuzzyMatching', s.useFuzzyMatching);
+        setChecked('EnableDebugLogging', s.enableDebugLogging);
+        setValue('TitleMatchThreshold', s.titleMatchThreshold);
+        setValue('SyncDelaySeconds', s.syncDelaySeconds);
+
+        // Connection status
+        const badge = document.getElementById('connStatusBadge');
+        const uname = document.getElementById('connUsername');
+        const refresh = document.getElementById('connLastRefresh');
+        if (data.isAuthenticated) {
+            badge.textContent = 'Connected';
+            badge.className = 'status-badge status-connected';
+            uname.textContent = data.malUsername || 'Connected';
+            refresh.textContent = 'Not available';
+            info.innerHTML = '<div class="alert alert-success"><i class="fas fa-check-circle" style="margin-right: 8px;"></i>Connected to MyAnimeList and using your personalized settings</div>';
+        } else {
+            badge.textContent = 'Not Connected';
+            badge.className = 'status-badge status-disconnected';
+            uname.textContent = 'Connect to enable syncing';
+            refresh.textContent = 'Connect to MAL first';
+            info.innerHTML = '<div class="alert alert-warning"><i class="fas fa-info-circle" style="margin-right: 8px;"></i>Configure your sync preferences below. <a href="/anisync">Connect to MyAnimeList</a> to enable syncing.</div>';
+        }
+    } catch (e) {
+        console.error('Failed to load settings:', e);
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
+    loadUserSettings();
+
     // Handle save button click with pure JSON
     const saveBtn = document.getElementById('saveSettingsBtn');
     if (saveBtn) {

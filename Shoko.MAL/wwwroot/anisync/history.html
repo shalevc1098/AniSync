@@ -271,7 +271,12 @@ async function loadHistoryData() {
                 'apikey': window.shokoApiKey || ''
             }
         });
-        
+
+        if (response.status === 401) {
+            showError('Log in to Shoko Server to view your sync history.');
+            return;
+        }
+
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
