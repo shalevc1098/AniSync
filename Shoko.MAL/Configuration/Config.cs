@@ -23,16 +23,21 @@ namespace Shoko.AniSync.Configuration
 
         public static string ApplyMigrations(string config, IApplicationPaths applicationPaths)
         {
-            // Migrate from old location (PluginsPath/AniSync/config.json) to framework-managed location
             var oldPath = Path.Combine(applicationPaths.PluginsPath, "AniSync", "config.json");
-            if (File.Exists(oldPath) && string.IsNullOrWhiteSpace(config))
+
+            var isEmptyOrDefault = string.IsNullOrWhiteSpace(config)
+                || config.Contains("\"users\":{}")
+                || config.Contains("\"users\": {}");
+
+            if (File.Exists(oldPath) && isEmptyOrDefault)
             {
                 var oldData = File.ReadAllText(oldPath);
-                // Wrap in {"users": ...} format
-                return $"{{\"users\":{oldData},\"selectedProvider\":\"Mal\"}}";
+                if (!string.IsNullOrWhiteSpace(oldData))
+                {
+                    return $"{{\"users\":{oldData},\"selectedProvider\":\"Mal\"}}";
+                }
             }
 
-            // If already new format, check for root-level user keys (no "users" wrapper)
             if (!string.IsNullOrWhiteSpace(config) && !config.Contains("\"users\"") && config.Contains("\"providers\""))
             {
                 return $"{{\"users\":{config},\"selectedProvider\":\"Mal\"}}";

@@ -91,17 +91,6 @@ namespace Shoko.AniSync.Api
             }
 
             var client = _httpClientFactory.CreateClient();
-            DateTime lastCallDateTime = _memoryCache.Get<DateTime>(MemoryCacheHelper.GetLastCallDateTimeKey(provider));
-            if (lastCallDateTime != default)
-            {
-                var elapsed = DateTime.UtcNow.Subtract(lastCallDateTime);
-                var remaining = TimeSpan.FromSeconds(defaultTimeoutSeconds) - elapsed;
-                if (remaining > TimeSpan.Zero)
-                {
-                    _logger.LogDebug($"({provider}) Delaying API call by {remaining.TotalSeconds:F1}s to prevent 429 (too many requests)...");
-                    await _delayer.Delay(remaining);
-                }
-            }
             if (requestHeaders != null)
             {
                 foreach (KeyValuePair<string, string> requestHeader in requestHeaders)
@@ -116,8 +105,6 @@ namespace Shoko.AniSync.Api
                 HttpResponseMessage? responseMessage = null;
                 try
                 {
-                    _memoryCache.Set(MemoryCacheHelper.GetLastCallDateTimeKey(provider), DateTime.UtcNow, TimeSpan.FromSeconds(5));
-
                     // Recreate content for each attempt since HttpClient disposes it after sending
                     HttpContent? bodyContent = null;
                     if (formContentBytes != null)

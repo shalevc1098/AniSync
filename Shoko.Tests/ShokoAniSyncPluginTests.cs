@@ -16,8 +16,10 @@ using Shoko.AniSync.Models.Mal;
 using Shoko.Abstractions.Plugin;
 using Shoko.Abstractions.Metadata;
 using Shoko.Abstractions.Metadata.Shoko;
-using Shoko.Abstractions.Events;
-using Shoko.Abstractions.Services;
+using Shoko.Abstractions.Config.Services;
+using Shoko.Abstractions.Metadata.Services;
+using Shoko.Abstractions.User.Events;
+using Shoko.Abstractions.User.Services;
 using Xunit;
 
 namespace Shoko.Tests;

@@ -18,14 +18,14 @@ namespace Shoko.Tests
     {
         private readonly Mock<ILogger<ShokoAniSyncPlugin>> _loggerMock;
         private readonly Mock<IApiCallHelpers> _apiCallHelpersMock;
-        private readonly Mock<Shoko.Abstractions.Services.IUserDataService> _userDataServiceMock;
+        private readonly Mock<Shoko.Abstractions.User.Services.IUserDataService> _userDataServiceMock;
         private readonly Config _config;
 
         public SetStartDateFromAnyEpisodeTests()
         {
             _loggerMock = new Mock<ILogger<ShokoAniSyncPlugin>>();
             _apiCallHelpersMock = new Mock<IApiCallHelpers>();
-            _userDataServiceMock = new Mock<Shoko.Abstractions.Services.IUserDataService>();
+            _userDataServiceMock = new Mock<Shoko.Abstractions.User.Services.IUserDataService>();
             _config = new Config();
         }
 

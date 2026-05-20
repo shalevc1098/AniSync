@@ -7,7 +7,7 @@ namespace Shoko.AniSync
     public class PluginServiceRegistration : IPluginServiceRegistration
     {
         /// <inheritdoc />
-        public void RegisterServices(IServiceCollection services, IApplicationPaths applicationPaths)
+        public static void RegisterServices(IServiceCollection services, IApplicationPaths applicationPaths)
         {
             services.AddHttpContextAccessor();
             services.AddMemoryCache();
@@ -17,6 +17,6 @@ namespace Shoko.AniSync
 
     public class PluginApplicationRegistration : IPluginApplicationRegistration
     {
-        public void RegisterServices(IApplicationBuilder application, IApplicationPaths applicationPaths) { }
+        public static void RegisterServices(IApplicationBuilder application, IApplicationPaths applicationPaths) { }
     }
 }

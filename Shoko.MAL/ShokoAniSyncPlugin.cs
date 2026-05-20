@@ -1,12 +1,13 @@
-using Shoko.Abstractions.Events;
-using Shoko.Abstractions.Services;
 using Shoko.Abstractions.Config;
-using Shoko.Abstractions.Plugin;
 using Shoko.Abstractions.Metadata;
+using Shoko.Abstractions.Metadata.Enums;
+using Shoko.Abstractions.Metadata.Services;
 using Shoko.Abstractions.Metadata.Shoko;
-using Shoko.Abstractions.UserData;
-using Shoko.Abstractions.UserData.Enums;
-using Shoko.Abstractions.Enums;
+using Shoko.Abstractions.Plugin;
+using Shoko.Abstractions.User;
+using Shoko.Abstractions.User.Enums;
+using Shoko.Abstractions.User.Events;
+using Shoko.Abstractions.User.Services;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Shoko.AniSync.Api;
@@ -60,13 +61,18 @@ namespace Shoko.AniSync
                 try
                 {
                     var tmdbEpisode = episode.TmdbEpisodes.First();
-                    var images = tmdbEpisode.GetImages();
+                    var preferred = tmdbEpisode.GetPreferredImageForType(ImageEntityType.Thumbnail);
+                    if (preferred != null && !string.IsNullOrEmpty(preferred.RemoteURL))
+                    {
+                        return preferred.RemoteURL;
+                    }
+                    var images = tmdbEpisode.GetImages(ImageEntityType.Thumbnail);
                     if (images?.Any() == true)
                     {
-                        var firstImage = images.First();
-                        if (!string.IsNullOrEmpty(firstImage.RemoteURL))
+                        var withRemote = images.FirstOrDefault(i => !string.IsNullOrEmpty(i.RemoteURL));
+                        if (withRemote != null)
                         {
-                            return firstImage.RemoteURL;
+                            return withRemote.RemoteURL;
                         }
                     }
                 }
@@ -81,13 +87,18 @@ namespace Shoko.AniSync
                 try
                 {
                     var tmdbMovie = episode.TmdbMovies.First();
-                    var images = tmdbMovie.GetImages();
+                    var preferred = tmdbMovie.GetPreferredImageForType(ImageEntityType.Thumbnail);
+                    if (preferred != null && !string.IsNullOrEmpty(preferred.RemoteURL))
+                    {
+                        return preferred.RemoteURL;
+                    }
+                    var images = tmdbMovie.GetImages(ImageEntityType.Thumbnail);
                     if (images?.Any() == true)
                     {
-                        var firstImage = images.First();
-                        if (!string.IsNullOrEmpty(firstImage.RemoteURL))
+                        var withRemote = images.FirstOrDefault(i => !string.IsNullOrEmpty(i.RemoteURL));
+                        if (withRemote != null)
                         {
-                            return firstImage.RemoteURL;
+                            return withRemote.RemoteURL;
                         }
                     }
                 }
@@ -97,6 +108,7 @@ namespace Shoko.AniSync
                 }
             }
 
+            // Shoko API fallback - serves locally cached TMDB images
             if (episode != null)
             {
                 return $"/api/v3/Episode/{episode.AnidbEpisodeID}/Images/Thumbnail";
@@ -336,14 +348,6 @@ namespace Shoko.AniSync
                     default:
                         _logger.LogWarning("No provider configured, skipping sync");
                         return;
-                }
-
-                // Apply configured sync delay before making API calls
-                var syncDelaySeconds = config.GetSyncDelaySeconds(shokoUser?.Username);
-                if (syncDelaySeconds > 0)
-                {
-                    _logger.LogDebug("Applying sync delay of {Seconds}s for user {Username}", syncDelaySeconds, shokoUser?.Username);
-                    await Task.Delay(TimeSpan.FromSeconds(syncDelaySeconds));
                 }
 
                 var maxEpisode = e.Episode;

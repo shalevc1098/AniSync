@@ -11,7 +11,7 @@ using Shoko.AniSync.Models.ViewModels;
 using Shoko.AniSync.Models.Mal;
 using Shoko.MAL.Models;
 using Shoko.Abstractions.Plugin;
-using Shoko.Abstractions.Services;
+using Shoko.Abstractions.User.Services;
 using System;
 using System.Collections.Generic;
 using System.IO;
