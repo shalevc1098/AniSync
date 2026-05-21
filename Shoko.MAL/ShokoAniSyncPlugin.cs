@@ -392,117 +392,39 @@ namespace Shoko.AniSync
                         _logger.LogInformation("Current MAL Status - Episodes: {MalEpisodes}/{Total}, Status: {Status}, Rewatching: {Rewatching}",
                             malEpisodeCount, totalEpisodes, currentStatus, isRewatching);
 
-                        // Determine if we need to update MAL
-                        bool shouldUpdate = false;
-                        int newEpisodeCount = malEpisodeCount;
-                        Status? newStatus = null;
-                        bool? setRewatching = null;
-                        int? numberOfTimesRewatched = null;
+                        // Decide what to sync. Rewatch is detected from a genuine replay
+                        // (PlaybackCount >= 2) of episode 1 on a completed series - not from
+                        // episode-number direction, so stray events can't reset progress.
+                        var decision = RewatchSyncDecision.Decide(
+                            isWatched,
+                            shokoEpisodeNumber,
+                            playbackCount,
+                            malEpisodeCount,
+                            totalEpisodes,
+                            currentStatus,
+                            isRewatching,
+                            currentRewatchCount,
+                            config.GetEnableRewatchDetection(shokoUser?.Username),
+                            config.GetAllowRollback(shokoUser?.Username));
 
-                        if (isWatched)
+                        bool shouldUpdate = decision.ShouldUpdate;
+                        int newEpisodeCount = decision.NewEpisodeCount;
+                        Status? newStatus = decision.NewStatus;
+                        bool? setRewatching = decision.SetRewatching;
+                        int? numberOfTimesRewatched = decision.NumberOfTimesRewatched;
+
+                        if (!shouldUpdate)
                         {
-                            // Episode marked as watched in Shoko
-                            if (shokoEpisodeNumber > malEpisodeCount)
-                            {
-                                // Progress forward - update MAL
-                                shouldUpdate = true;
-                                // Cap episode count at total episodes to prevent invalid values
-                                newEpisodeCount = (totalEpisodes > 0 && shokoEpisodeNumber > totalEpisodes)
-                                    ? totalEpisodes
-                                    : shokoEpisodeNumber;
-
-                                // Update status based on progress
-                                if (currentStatus != Status.Watching && currentStatus != Status.Completed)
-                                {
-                                    newStatus = Status.Watching;
-                                }
-
-                                // Check if completed
-                                if (totalEpisodes > 0 && shokoEpisodeNumber >= totalEpisodes)
-                                {
-                                    newStatus = Status.Completed;
-                                    setRewatching = false;
-                                }
-
-                                // If currently rewatching and reaching the end, complete and increment rewatch count
-                                if (isRewatching && totalEpisodes > 0 && shokoEpisodeNumber >= totalEpisodes)
-                                {
-                                    newStatus = Status.Completed;
-                                    setRewatching = false;
-                                    numberOfTimesRewatched = currentRewatchCount + 1;
-                                    _logger.LogInformation("Completed rewatch #{Count} for {Title}", numberOfTimesRewatched, anime.Title);
-                                }
-
-                                _logger.LogInformation("Updating MAL: Episode {Episode} (was {OldEpisode})", newEpisodeCount, malEpisodeCount);
-                            }
-                            else if (shokoEpisodeNumber < malEpisodeCount)
-                            {
-                                // Going backwards - likely a rewatch
-                                bool rewatchDetectionEnabled = config.GetEnableRewatchDetection(shokoUser?.Username);
-                                if (rewatchDetectionEnabled && (currentStatus == Status.Completed || malEpisodeCount == totalEpisodes))
-                                {
-                                    shouldUpdate = true;
-                                    newEpisodeCount = shokoEpisodeNumber;
-                                    if (!isRewatching)
-                                    {
-                                        // Started rewatching a completed series
-                                        setRewatching = true;
-                                        _logger.LogInformation("Detected rewatch - setting is_rewatching flag, episode progress: {Episode}", shokoEpisodeNumber);
-                                    }
-                                    else
-                                    {
-                                        _logger.LogInformation("Already rewatching, updating episode progress to {Episode}", shokoEpisodeNumber);
-                                    }
-                                }
-                                else
-                                {
-                                    _logger.LogInformation("Episode {Episode} already watched in MAL (has {MalEpisode}), skipping update{Reason}",
-                                        shokoEpisodeNumber, malEpisodeCount, !rewatchDetectionEnabled ? " (rewatch detection disabled)" : "");
-                                }
-                            }
-                            else
-                            {
-                                _logger.LogInformation("Episode {Episode} already synced with MAL, skipping update", shokoEpisodeNumber);
-                            }
+                            _logger.LogInformation("No MAL update needed for {Title} (episode {Episode}, MAL has {MalEpisode}, watched={Watched})",
+                                anime.Title, shokoEpisodeNumber, malEpisodeCount, isWatched);
                         }
-                        else
+                        else if (setRewatching == true)
                         {
-                            // Episode marked as unwatched in Shoko
-                            bool rollbackEnabled = config.GetAllowRollback(shokoUser?.Username);
-                            if (rollbackEnabled && shokoEpisodeNumber == malEpisodeCount && malEpisodeCount > 0)
-                            {
-                                // User is unmarking the highest watched episode - roll back by one
-                                shouldUpdate = true;
-                                newEpisodeCount = malEpisodeCount - 1;
-
-                                // Update status if rolling back from completed
-                                if (currentStatus == Status.Completed)
-                                {
-                                    newStatus = Status.Watching;
-                                    // Only clear rewatch flag if not currently in a rewatch
-                                    if (!isRewatching)
-                                    {
-                                        setRewatching = false;
-                                    }
-                                }
-
-                                _logger.LogInformation("Rolling back MAL progress: Episode {OldEpisode} -> {NewEpisode} (unmarked highest episode)",
-                                    malEpisodeCount, newEpisodeCount);
-                            }
-                            else if (!rollbackEnabled && shokoEpisodeNumber == malEpisodeCount && malEpisodeCount > 0)
-                            {
-                                _logger.LogInformation("Episode {Episode} unmarked but rollback is disabled in settings - skipping MAL update",
-                                    shokoEpisodeNumber);
-                            }
-                            else if (shokoEpisodeNumber < malEpisodeCount)
-                            {
-                                _logger.LogInformation("Episode {Episode} unmarked but MAL has higher episodes watched ({MalEpisode}) - skipping rollback to avoid gaps",
-                                    shokoEpisodeNumber, malEpisodeCount);
-                            }
-                            else
-                            {
-                                _logger.LogInformation("Episode marked as unwatched in Shoko - no MAL update needed");
-                            }
+                            _logger.LogInformation("Detected rewatch start for {Title} - setting is_rewatching, progress {Episode}", anime.Title, newEpisodeCount);
+                        }
+                        else if (numberOfTimesRewatched != null)
+                        {
+                            _logger.LogInformation("Completed rewatch #{Count} for {Title}", numberOfTimesRewatched, anime.Title);
                         }
 
                         // Perform the update if needed

@@ -134,24 +134,6 @@ public class SyncLogicTests
     }
 
     [Fact]
-    public void Should_Detect_Rewatch_When_Episode_Count_Goes_Backward()
-    {
-        // Scenario: User completed series (12 episodes), now watching episode 1 again
-        var malEpisodeCount = 12;
-        var totalEpisodes = 12;
-        var shokoEpisodeNumber = 1;
-        var currentStatus = Status.Completed;
-        var isWatched = true;
-
-        // Detect rewatch condition
-        var isRewatch = isWatched &&
-                       shokoEpisodeNumber < malEpisodeCount &&
-                       (currentStatus == Status.Completed || malEpisodeCount == totalEpisodes);
-
-        isRewatch.Should().BeTrue("Should detect rewatch when watching early episode of completed series");
-    }
-
-    [Fact]
     public void Should_Only_Update_When_Progress_Moves_Forward()
     {
         // Test various scenarios
@@ -543,24 +525,18 @@ public class SyncLogicTests
     public void EdgeCase_RewatchDetection_RespectsConfig(
         bool enableRewatchDetection, bool expectRewatch)
     {
-        int malEpisodeCount = 12;
-        int totalEpisodes = 12;
-        var currentStatus = Status.Completed;
+        // Genuine restart of a completed 12-ep series: episode 1 actually replayed.
+        var d = RewatchSyncDecision.Decide(
+            isWatched: true, shokoEpisodeNumber: 1, playbackCount: 2,
+            malEpisodeCount: 12, totalEpisodes: 12, currentStatus: Status.Completed,
+            isRewatching: false, currentRewatchCount: 0,
+            rewatchDetectionEnabled: enableRewatchDetection, rollbackEnabled: false);
 
-        bool shouldUpdate = false;
-        bool? setRewatching = null;
-
-        if (enableRewatchDetection && (currentStatus == Status.Completed || malEpisodeCount == totalEpisodes))
-        {
-            shouldUpdate = true;
-            setRewatching = true;
-        }
-
-        shouldUpdate.Should().Be(expectRewatch);
+        d.ShouldUpdate.Should().Be(expectRewatch);
         if (expectRewatch)
-            setRewatching.Should().BeTrue();
+            d.SetRewatching.Should().BeTrue();
         else
-            setRewatching.Should().BeNull();
+            d.SetRewatching.Should().BeNull();
     }
 
     // ========================================================================
