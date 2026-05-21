@@ -98,7 +98,7 @@
         </div>
     </div>
     
-    <div class='settings-section' style='margin-top: 40px;'>
+    <div class='settings-section' id='api-config-section' style='margin-top: 40px;'>
         <h3>API Configuration</h3>
         <div class='alert alert-warning' style='margin-bottom: 15px;'>
             <i class="fas fa-exclamation-triangle" style="margin-right: 8px;"></i>Changing credentials will disconnect existing MAL accounts and require re-authentication.
@@ -151,6 +151,10 @@ async function loadUserSettings() {
 
         const data = await response.json();
         const s = data.settings || {};
+
+        // Global MAL credentials are admin-only; hide that section for non-admins.
+        const apiConfig = document.getElementById('api-config-section');
+        if (apiConfig && !data.isAdmin) apiConfig.style.display = 'none';
 
         const setChecked = (id, v) => { const el = document.getElementById(id); if (el) el.checked = !!v; };
         const setValue = (id, v) => { const el = document.getElementById(id); if (el && v !== undefined && v !== null) el.value = v; };

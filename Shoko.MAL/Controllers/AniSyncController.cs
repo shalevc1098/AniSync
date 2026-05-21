@@ -77,10 +77,87 @@ namespace Shoko.AniSync.Controllers
 
         [HttpGet]
         [Route("buildAuthorizeRequestUrl")]
-        public string BuildAuthorizeRequestUrl(ApiName provider, string? state = null, string? baseUrl = null)
+        public IActionResult BuildAuthorizeRequestUrl(ApiName provider, string? baseUrl = null)
         {
-            var effectiveBaseUrl = baseUrl ?? ShokoApiBaseUrl;
-            return new ApiAuthentication(provider, _httpClientFactory, _loggerFactory, _configProvider, _applicationPaths, _memoryCache, effectiveBaseUrl).BuildAuthorizeRequestUrl(state);
+            // Called via fetch, so the apikey header is present. The OAuth state is built
+            // and signed here, bound to the resolved caller - any client-supplied user is
+            // ignored, which prevents linking a MAL account to someone else on callback.
+            var shokoUsername = GetCurrentShokoUser();
+            if (string.IsNullOrEmpty(shokoUsername))
+                return Unauthorized();
+
+            var requestHost = _httpContextAccessor?.HttpContext?.Request?.Host.Host;
+            var effectiveBaseUrl = IsAllowedBaseUrl(baseUrl, requestHost) ? baseUrl!.TrimEnd('/') : ShokoApiBaseUrl;
+
+            var state = SignState(shokoUsername, effectiveBaseUrl);
+            var url = new ApiAuthentication(provider, _httpClientFactory, _loggerFactory, _configProvider, _applicationPaths, _memoryCache, effectiveBaseUrl).BuildAuthorizeRequestUrl(state);
+            return Content(url, "text/plain");
+        }
+
+        /// <summary>HMAC-signs an OAuth state binding the authorized Shoko user + baseUrl, with a 10-minute expiry.</summary>
+        private string SignState(string user, string baseUrl)
+        {
+            var payload = JsonSerializer.Serialize(new
+            {
+                u = user,
+                b = baseUrl,
+                exp = DateTimeOffset.UtcNow.AddMinutes(10).ToUnixTimeSeconds()
+            });
+            var payloadBytes = System.Text.Encoding.UTF8.GetBytes(payload);
+            var key = GlobalSettings.GetOrCreateStateSigningKey(_applicationPaths);
+            using var hmac = new System.Security.Cryptography.HMACSHA256(key);
+            return Base64Url(payloadBytes) + "." + Base64Url(hmac.ComputeHash(payloadBytes));
+        }
+
+        /// <summary>Verifies a signed OAuth state (signature + expiry) and extracts the bound user/baseUrl.</summary>
+        private bool TryVerifyState(string state, out string? user, out string? baseUrl)
+        {
+            user = null;
+            baseUrl = null;
+            try
+            {
+                var parts = state.Split('.');
+                if (parts.Length != 2) return false;
+
+                var payloadBytes = Base64UrlDecode(parts[0]);
+                var providedSig = Base64UrlDecode(parts[1]);
+                var key = GlobalSettings.GetOrCreateStateSigningKey(_applicationPaths);
+                using var hmac = new System.Security.Cryptography.HMACSHA256(key);
+                var expectedSig = hmac.ComputeHash(payloadBytes);
+                if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(providedSig, expectedSig))
+                    return false;
+
+                var obj = JsonSerializer.Deserialize<JsonElement>(System.Text.Encoding.UTF8.GetString(payloadBytes));
+                var exp = obj.TryGetProperty("exp", out var expEl) ? expEl.GetInt64() : 0;
+                if (DateTimeOffset.UtcNow.ToUnixTimeSeconds() > exp) return false;
+
+                user = obj.TryGetProperty("u", out var uEl) ? uEl.GetString() : null;
+                baseUrl = obj.TryGetProperty("b", out var bEl) ? bEl.GetString() : null;
+                return !string.IsNullOrEmpty(user);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static string Base64Url(byte[] data) =>
+            Convert.ToBase64String(data).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+
+        private static byte[] Base64UrlDecode(string s)
+        {
+            s = s.Replace('-', '+').Replace('_', '/');
+            switch (s.Length % 4) { case 2: s += "=="; break; case 3: s += "="; break; }
+            return Convert.FromBase64String(s);
+        }
+
+        /// <summary>Only allow a client-supplied baseUrl if it matches the current request host (else fall back server-side).</summary>
+        private bool IsAllowedBaseUrl(string? baseUrl, string? requestHost)
+        {
+            if (string.IsNullOrEmpty(baseUrl)) return false;
+            if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri)) return false;
+            if (uri.Scheme != "http" && uri.Scheme != "https") return false;
+            return uri.Host == requestHost || uri.Host == "localhost" || uri.Host == "127.0.0.1";
         }
 
         [HttpGet]
@@ -90,54 +167,15 @@ namespace Shoko.AniSync.Controllers
             ApiName provider = ApiName.Mal;
             try
             {
-                string? shokoUsername = null;
-                string? callbackBaseUrl = null;
-
-                // Decode JSON state: { "user": "...", "baseUrl": "..." }
-                if (!string.IsNullOrEmpty(state))
+                // The state must be a valid, unexpired, server-signed token. Its bound user
+                // is trusted; a forged/tampered state (e.g. naming another user) is rejected.
+                if (string.IsNullOrEmpty(state) || !TryVerifyState(state, out var shokoUsername, out var callbackBaseUrl) || string.IsNullOrEmpty(shokoUsername))
                 {
-                    try
-                    {
-                        var decoded = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(state));
-                        var stateObj = JsonSerializer.Deserialize<JsonElement>(decoded);
-                        if (stateObj.TryGetProperty("user", out var userProp))
-                            shokoUsername = userProp.GetString();
-                        if (stateObj.TryGetProperty("baseUrl", out var baseUrlProp))
-                            callbackBaseUrl = baseUrlProp.GetString();
-                        _logger.LogDebug("Decoded OAuth state - user: {Username}, baseUrl: {BaseUrl}", shokoUsername, callbackBaseUrl);
-                    }
-                    catch (JsonException)
-                    {
-                        // Legacy plain-text state (just username)
-                        try
-                        {
-                            shokoUsername = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(state));
-                            _logger.LogDebug("Decoded legacy OAuth state: {Username}", shokoUsername);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogWarning(ex, "Failed to decode state parameter");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Failed to decode state parameter");
-                    }
+                    _logger.LogWarning("OAuth callback rejected: missing or invalid signed state");
+                    return Redirect("/anisync?error=invalid_state");
                 }
 
-                // Last resort - try current context
-                if (string.IsNullOrEmpty(shokoUsername))
-                {
-                    shokoUsername = GetCurrentShokoUser();
-                }
-
-                if (string.IsNullOrEmpty(shokoUsername))
-                {
-                    _logger.LogError("Cannot authenticate MAL without a valid Shoko user. State: {State}", state ?? "null");
-                    return Redirect("/anisync?error=No+authenticated+user+found");
-                }
-
-                var effectiveBaseUrl = callbackBaseUrl ?? ShokoApiBaseUrl;
+                var effectiveBaseUrl = string.IsNullOrEmpty(callbackBaseUrl) ? ShokoApiBaseUrl : callbackBaseUrl;
                 _logger.LogInformation("Authenticating MAL for Shoko user: {ShokoUsername} with baseUrl: {BaseUrl}", shokoUsername, effectiveBaseUrl);
                 new ApiAuthentication(provider, _httpClientFactory, _loggerFactory, _configProvider, _applicationPaths, _memoryCache, effectiveBaseUrl).GetToken(code, shokoUsername: shokoUsername, state: state);
 
@@ -145,19 +183,16 @@ namespace Shoko.AniSync.Controllers
             }
             catch (AuthenticationException authEx)
             {
-                // this is the exception you throw when you get a non‐200 back
                 _logger.LogError(authEx, "Failed to retrieve MAL token: {Message}", authEx.Message);
                 return Redirect("/anisync?error=" + Uri.EscapeDataString(authEx.Message));
             }
             catch (HttpRequestException httpEx)
             {
-                // HTTP errors (DNS, timeout, 5xx, etc)
                 _logger.LogError(httpEx, "HTTP request to MAL failed");
                 return Redirect("/anisync?error=Failed+to+connect+to+MyAnimeList");
             }
             catch (Exception ex)
             {
-                // anything else
                 _logger.LogError(ex, "Unexpected error in auth callback");
                 return Redirect("/anisync?error=An+unexpected+error+occurred");
             }
@@ -177,11 +212,9 @@ namespace Shoko.AniSync.Controllers
                     return Unauthorized(new { error = "No API key provided" });
                 }
                 
-                // Create HTTP client to call Shoko's actual API
                 var httpClient = _httpClientFactory.CreateClient();
                 httpClient.DefaultRequestHeaders.Add("apikey", apiKey);
                 
-                // Call Shoko's internal User/Current endpoint
                 // Since we're running as a plugin, we need to use localhost
                 using var response = await httpClient.GetAsync($"{ShokoLocalUrl}/api/v3/User/Current");
 
@@ -200,7 +233,6 @@ namespace Shoko.AniSync.Controllers
             }
         }
         
-        // Dashboard
         [HttpGet]
         [Route("")]
         public IActionResult Index()
@@ -212,7 +244,6 @@ namespace Shoko.AniSync.Controllers
         }
         
         
-        // Settings page
         [HttpGet]
         [Route("Settings")]
         public IActionResult Settings()
@@ -236,7 +267,6 @@ namespace Shoko.AniSync.Controllers
                 return BadRequest("Invalid settings data");
             }
             
-            // Get current Shoko user
             var shokoUsername = GetCurrentShokoUser();
             if (string.IsNullOrEmpty(shokoUsername))
             {
@@ -267,7 +297,6 @@ namespace Shoko.AniSync.Controllers
             return Redirect("/anisync/settings");
         }
         
-        // History page
         [HttpGet]
         [Route("History")]
         public IActionResult History()
@@ -276,30 +305,6 @@ namespace Shoko.AniSync.Controllers
             // current user's history client-side from /anisync/api/history (apikey header).
             var html = GetLayout("Sync History", LoadEmbeddedResource("history.html"));
             return Content(html, "text/html");
-        }
-        
-        // OAuth flow initiation
-        [HttpGet]
-        [Route("Auth")]
-        public IActionResult Auth()
-        {
-            // Always get current user from Shoko context
-            var currentUser = GetCurrentShokoUser();
-            
-            // If no user found, show error
-            if (string.IsNullOrEmpty(currentUser) || currentUser == "None")
-            {
-                _logger.LogError("No Shoko user found for OAuth flow.");
-                return Redirect("/anisync/login?error=Not+logged+into+Shoko");
-            }
-            
-            // Encode username and base URL in the state parameter for OAuth flow
-            var stateJson = JsonSerializer.Serialize(new { user = currentUser, baseUrl = ShokoApiBaseUrl });
-            var state = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(stateJson));
-            _logger.LogInformation("Starting OAuth flow for user: {Username}", currentUser);
-            
-            var authUrl = BuildAuthorizeRequestUrl(ApiName.Mal, state);
-            return Redirect(authUrl);
         }
         
         // Logout
@@ -313,7 +318,6 @@ namespace Shoko.AniSync.Controllers
             if (!string.IsNullOrEmpty(currentUser) && config?.Users.ContainsKey(currentUser) == true)
             {
                 var userConfig = config.Users[currentUser];
-                // Remove the MAL auth for the current user
                 if (userConfig?.Providers?.ContainsKey("Mal") == true)
                 {
                     userConfig.Providers.Remove("Mal");
@@ -321,9 +325,7 @@ namespace Shoko.AniSync.Controllers
                 }
             }
             
-            // Session data is not used - authentication is handled via apikey headers
             
-            // TempData["SuccessMessage"] = "Logged out successfully";
             return RedirectToAction("Index");
         }
         
@@ -334,7 +336,6 @@ namespace Shoko.AniSync.Controllers
         {
             try
             {
-                // Get current Shoko user
                 var shokoUsername = GetCurrentShokoUser();
                 if (string.IsNullOrEmpty(shokoUsername))
                 {
@@ -345,55 +346,13 @@ namespace Shoko.AniSync.Controllers
                 var auth = new ApiAuthentication(ApiName.Mal, _httpClientFactory, _loggerFactory, _configProvider, _applicationPaths, _memoryCache);
                 await auth.RefreshAccessToken(shokoUsername);
                 
-                // TempData["SuccessMessage"] = "Connection refreshed successfully!";
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to refresh token");
-                // TempData["ErrorMessage"] = "Failed to refresh connection";
             }
             
             return Redirect("/anisync/settings");
-        }
-        
-        private object? TryGetAllUsers()
-        {
-            try
-            {
-                if (_userService != null)
-                {
-                    var users = _userService.GetUsers();
-                    return users?.Take(5).Select(u => new { 
-                        ID = GetUserProperty(u, "JMMUserID"), 
-                        Username = GetUserProperty(u, "Username") 
-                    }).ToList();
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to get users from UserService");
-                return $"Error: {ex.Message}";
-            }
-            return null;
-        }
-        
-        private object TryGetUserWatchDataTest(object user)
-        {
-            try
-            {
-                var userID = GetUserProperty(user, "JMMUserID");
-                if (userID is int id)
-                {
-                    // Test with a dummy video ID - just to see if the method works
-                    var watchData = TryGetUserWatchData(id, 1);
-                    return watchData != null ? "Found data" : "No data for video ID 1";
-                }
-            }
-            catch (Exception ex)
-            {
-                return $"Error: {ex.Message}";
-            }
-            return "Could not get user ID";
         }
         
         private object? GetUserProperty(object user, string propertyName)
@@ -405,6 +364,24 @@ namespace Shoko.AniSync.Controllers
             catch
             {
                 return null;
+            }
+        }
+
+        /// <summary>True if the resolved caller is a Shoko admin. Used to gate global settings.</summary>
+        private bool IsCurrentUserAdmin()
+        {
+            var username = GetCurrentShokoUser();
+            if (string.IsNullOrEmpty(username) || _userService == null) return false;
+            try
+            {
+                var user = _userService.GetUsers()?
+                    .FirstOrDefault(u => string.Equals(GetUserProperty(u, "Username") as string, username, StringComparison.Ordinal));
+                return user != null && GetUserProperty(user, "IsAdmin") as bool? == true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to determine admin status for {Username}", username);
+                return false;
             }
         }
         
@@ -438,7 +415,6 @@ namespace Shoko.AniSync.Controllers
                         if (response.IsSuccessStatusCode)
                         {
                             var content = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-                            // Parse the JSON to get username
                             var userData = Newtonsoft.Json.JsonConvert.DeserializeObject<dynamic>(content);
                             if (userData?.Username != null)
                             {
@@ -469,29 +445,6 @@ namespace Shoko.AniSync.Controllers
                 httpContext.Items[ShokoUserCacheKey] = result;
             }
             return result;
-        }
-        
-        private object? TryGetUserWatchData(int userID, int videoID)
-        {
-            // GetVideoUserData now requires IVideo and IUser objects instead of IDs
-            // This debug method cannot easily resolve those from int IDs
-            _logger.LogDebug("TryGetUserWatchData called with userID={UserID}, videoID={VideoID} - not supported in new API", userID, videoID);
-            return null;
-        }
-        
-        private List<SyncActivity> GetRecentActivity()
-        {
-            // This would be populated from actual sync logs
-            return new List<SyncActivity>
-            {
-                new SyncActivity 
-                { 
-                    Time = DateTime.Now.AddMinutes(-5).ToString("HH:mm"),
-                    AnimeName = "Kusuriya no Hitorigoto",
-                    Episode = 12,
-                    Success = true
-                }
-            };
         }
         
         [HttpGet]
@@ -530,6 +483,12 @@ namespace Shoko.AniSync.Controllers
             if (string.IsNullOrEmpty(currentUser))
             {
                 return Unauthorized(new { error = "Authentication required" });
+            }
+
+            // Global MAL credentials affect every user, so only admins may change them.
+            if (!IsCurrentUserAdmin())
+            {
+                return StatusCode(403, new { error = "Only an administrator can change MAL API credentials" });
             }
 
             if (request == null)
@@ -731,6 +690,7 @@ namespace Shoko.AniSync.Controllers
             return JsonCamel(new
             {
                 isAuthenticated,
+                isAdmin = IsCurrentUserAdmin(),
                 shokoUsername,
                 malUsername = userAuth?.Username,
                 syncedAnime,
@@ -759,6 +719,7 @@ namespace Shoko.AniSync.Controllers
             return JsonCamel(new
             {
                 isAuthenticated,
+                isAdmin = IsCurrentUserAdmin(),
                 shokoUsername,
                 malUsername = userAuth?.Username,
                 settings = new
@@ -778,50 +739,19 @@ namespace Shoko.AniSync.Controllers
         }
 
         /// <summary>
-        /// API endpoint to get all users' sync statistics
-        /// </summary>
-        [HttpGet]
-        [Route("api/stats")]
-        public async Task<IActionResult> GetSyncStatsApi()
-        {
-            try
-            {
-                if (ShokoAniSyncPlugin.SyncHistory == null)
-                {
-                    return Json(new { error = "Sync history not available" });
-                }
-
-                var stats = await ShokoAniSyncPlugin.SyncHistory.GetStatsAsync();
-                return Json(new {
-                    total_syncs = stats.TotalSyncs,
-                    successful_syncs = stats.SuccessfulSyncs,
-                    failed_syncs = stats.FailedSyncs,
-                    success_rate = stats.SuccessRate,
-                    last_sync_time = stats.LastSyncTime,
-                    syncs_by_user = stats.SyncsByUser,
-                    syncs_by_action = stats.SyncsByAction
-                });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error retrieving sync statistics");
-                return StatusCode(500, new { error = "Internal server error" });
-            }
-        }
-
-        /// <summary>
-        /// API endpoint to clear history for a specific user
+        /// Clears the calling user's own sync history. Operates only on the resolved
+        /// caller; never accepts a username from the request.
         /// </summary>
         [HttpDelete]
-        [Route("api/history/{username}")]
-        public async Task<IActionResult> ClearUserHistoryApi(string username)
+        [Route("api/history")]
+        public async Task<IActionResult> ClearUserHistoryApi()
         {
             try
             {
                 var currentUser = GetCurrentShokoUser();
-                if (string.IsNullOrEmpty(currentUser) || !currentUser.Equals(username, StringComparison.OrdinalIgnoreCase))
+                if (string.IsNullOrEmpty(currentUser))
                 {
-                    return Unauthorized(new { error = "You can only clear your own history" });
+                    return Unauthorized(new { error = "Authentication required" });
                 }
 
                 if (ShokoAniSyncPlugin.SyncHistory == null)
@@ -829,17 +759,12 @@ namespace Shoko.AniSync.Controllers
                     return Json(new { error = "Sync history not available" });
                 }
 
-                if (string.IsNullOrEmpty(username))
-                {
-                    return BadRequest(new { error = "Username is required" });
-                }
-
-                await ShokoAniSyncPlugin.SyncHistory.ClearHistoryAsync(username);
-                return Json(new { success = true, message = $"History cleared for user {username}" });
+                await ShokoAniSyncPlugin.SyncHistory.ClearHistoryAsync(currentUser);
+                return Json(new { success = true, message = "History cleared" });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error clearing history for user {Username}", username);
+                _logger.LogError(ex, "Error clearing history for current user");
                 return StatusCode(500, new { error = "Internal server error" });
             }
         }

@@ -49,7 +49,7 @@
             Connect your MyAnimeList account to automatically sync your watch history from Shoko Server.
         </p>
 
-        <div class='settings-section' style='margin-top: 2rem;'>
+        <div class='settings-section' id='dash-api-config' style='margin-top: 2rem;'>
             <h3 style='color: #46bcf2; margin-bottom: 15px;'>API Configuration</h3>
             <p style='color: #9ca9b3; font-size: 0.9rem; margin-bottom: 15px;'>Enter your MAL API application credentials. You can create an app at <a href='https://myanimelist.net/apiconfig' target='_blank' style='color: #46bcf2;'>myanimelist.net/apiconfig</a>.</p>
             <div style='background: #252a48; border: 1px solid #2b3556; border-radius: 6px; padding: 12px 15px; margin-bottom: 15px;'>
@@ -140,12 +140,18 @@ document.addEventListener('DOMContentLoaded', async function() {
         dashShowState('authed');
     } else {
         dashShowState('unauthed');
-        initConnectFlow(data.shokoUsername);
+        initConnectFlow(data.isAdmin);
     }
 });
 
-function initConnectFlow(currentUser) {
+function initConnectFlow(isAdmin) {
     const apikey = dashApiKey();
+
+    // Only admins configure the global MAL app credentials.
+    if (!isAdmin) {
+        const apiConfig = document.getElementById('dash-api-config');
+        if (apiConfig) apiConfig.style.display = 'none';
+    }
 
     // Load existing global settings
     (async function loadGlobalSettings() {
@@ -163,6 +169,8 @@ function initConnectFlow(currentUser) {
                 if (data.malClientId) {
                     document.getElementById('connectMalBtn').disabled = false;
                     document.getElementById('connectHint').style.display = 'none';
+                } else if (!isAdmin) {
+                    document.getElementById('connectHint').textContent = 'Ask an administrator to configure MyAnimeList API credentials.';
                 }
             }
         } catch (err) {
@@ -223,12 +231,12 @@ function initConnectFlow(currentUser) {
         }
     });
 
-    // Connect button
+    // Connect button. The OAuth state (incl. which Shoko user to link) is built and
+    // signed server-side from the apikey, so we don't send a user here.
     document.getElementById('connectMalBtn').addEventListener('click', async function() {
         try {
-            const stateObj = JSON.stringify({ user: currentUser, baseUrl: window.location.origin });
-            const state = btoa(stateObj);
-            const response = await fetch(`/anisync/buildAuthorizeRequestUrl?provider=Mal&state=${encodeURIComponent(state)}&baseUrl=${encodeURIComponent(window.location.origin)}`);
+            const response = await fetch(`/anisync/buildAuthorizeRequestUrl?provider=Mal&baseUrl=${encodeURIComponent(window.location.origin)}`,
+                { headers: { 'apikey': dashApiKey() } });
             if (!response.ok) {
                 throw new Error(`Server returned ${response.status}`);
             }
