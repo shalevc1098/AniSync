@@ -56,65 +56,41 @@ namespace Shoko.AniSync
         /// </summary>
         private string? GetEpisodeThumbnailUrl(IShokoEpisode? episode, Anime? anime)
         {
-            if (episode?.TmdbEpisodes?.Any() == true)
-            {
-                try
-                {
-                    var tmdbEpisode = episode.TmdbEpisodes.First();
-                    var preferred = tmdbEpisode.GetPreferredImageForType(ImageEntityType.Thumbnail);
-                    if (preferred != null && !string.IsNullOrEmpty(preferred.RemoteURL))
-                    {
-                        return preferred.RemoteURL;
-                    }
-                    var images = tmdbEpisode.GetImages(ImageEntityType.Thumbnail);
-                    if (images?.Any() == true)
-                    {
-                        var withRemote = images.FirstOrDefault(i => !string.IsNullOrEmpty(i.RemoteURL));
-                        if (withRemote != null)
-                        {
-                            return withRemote.RemoteURL;
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogDebug(ex, "Failed to get TMDB episode thumbnail");
-                }
-            }
-
-            if (episode?.TmdbMovies?.Any() == true)
-            {
-                try
-                {
-                    var tmdbMovie = episode.TmdbMovies.First();
-                    var preferred = tmdbMovie.GetPreferredImageForType(ImageEntityType.Thumbnail);
-                    if (preferred != null && !string.IsNullOrEmpty(preferred.RemoteURL))
-                    {
-                        return preferred.RemoteURL;
-                    }
-                    var images = tmdbMovie.GetImages(ImageEntityType.Thumbnail);
-                    if (images?.Any() == true)
-                    {
-                        var withRemote = images.FirstOrDefault(i => !string.IsNullOrEmpty(i.RemoteURL));
-                        if (withRemote != null)
-                        {
-                            return withRemote.RemoteURL;
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogDebug(ex, "Failed to get TMDB movie thumbnail");
-                }
-            }
-
-            // Shoko API fallback - serves locally cached TMDB images
             if (episode != null)
             {
                 return $"/api/v3/Episode/{episode.AnidbEpisodeID}/Images/Thumbnail";
             }
 
             return anime?.MainPicture?.Medium ?? anime?.MainPicture?.Large;
+        }
+
+        private static DateTime? GetSeriesAirDate(object? series)
+        {
+            if (series == null) return null;
+            var value = series.GetType().GetProperty("AirDate")?.GetValue(series);
+            if (value == null) return null;
+
+            switch (value)
+            {
+                case DateTime dt: return dt;
+                case DateOnly d: return d.ToDateTime(TimeOnly.MinValue);
+            }
+
+            var t = value.GetType();
+            if (t.GetProperty("Year")?.GetValue(value) is int year && year > 0)
+            {
+                int month = (t.GetProperty("Month")?.GetValue(value) as int?) ?? 1;
+                int day = (t.GetProperty("Day")?.GetValue(value) as int?) ?? 1;
+                if (month < 1) month = 1;
+                if (day < 1) day = 1;
+                try { return new DateTime(year, month, day); }
+                catch { return new DateTime(year, 1, 1); }
+            }
+
+            if (t.GetMethod("ToDateOnly", Type.EmptyTypes)?.Invoke(value, null) is DateOnly od)
+                return od.ToDateTime(TimeOnly.MinValue);
+
+            return null;
         }
 
         private bool CompareStrings(string first, string second)
@@ -212,13 +188,14 @@ namespace Shoko.AniSync
                 return allAnimes.DistinctBy(a => a.Id).ToList();
             });
 
+            DateTime? seriesAirDate = GetSeriesAirDate(episode.Series);
             var candidates = (uniqueAnimes ?? new List<Anime>())
                             .Where(a => a != null && TitleCheck(a, episode))
                             .Select(a => new {
                                 Anime = a,
                                 MalDate = ParseFullDate(a.StartDate ?? ""),
-                                DiffDays = episode.Series?.AirDate.HasValue == true && ParseFullDate(a.StartDate ?? "").HasValue
-                                    ? Math.Abs((ParseFullDate(a.StartDate ?? "")!.Value - episode.Series!.AirDate.Value).TotalDays)
+                                DiffDays = seriesAirDate.HasValue && ParseFullDate(a.StartDate ?? "").HasValue
+                                    ? Math.Abs((ParseFullDate(a.StartDate ?? "")!.Value - seriesAirDate.Value).TotalDays)
                                     : double.MaxValue
                             })
                             .Where(x => x.DiffDays < 30)
@@ -392,9 +369,6 @@ namespace Shoko.AniSync
                         _logger.LogInformation("Current MAL Status - Episodes: {MalEpisodes}/{Total}, Status: {Status}, Rewatching: {Rewatching}",
                             malEpisodeCount, totalEpisodes, currentStatus, isRewatching);
 
-                        // Decide what to sync. Rewatch is detected from a genuine replay
-                        // (PlaybackCount >= 2) of episode 1 on a completed series - not from
-                        // episode-number direction, so stray events can't reset progress.
                         var decision = RewatchSyncDecision.Decide(
                             isWatched,
                             shokoEpisodeNumber,

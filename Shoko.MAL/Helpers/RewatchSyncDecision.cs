@@ -55,7 +55,6 @@ namespace Shoko.AniSync.Helpers
             {
                 if (shokoEpisodeNumber > malEpisodeCount)
                 {
-                    // Progress forward. Also handles advancing/finishing an in-progress rewatch.
                     var newEpisodeCount = (totalEpisodes > 0 && shokoEpisodeNumber > totalEpisodes)
                         ? totalEpisodes
                         : shokoEpisodeNumber;
@@ -85,9 +84,6 @@ namespace Shoko.AniSync.Helpers
                     };
                 }
 
-                // Not progressing forward. The only valid reason to touch MAL here is a
-                // genuine rewatch START: a finished series whose first episode was
-                // actually replayed. This avoids resetting progress on stray events.
                 bool isRewatchStart = rewatchDetectionEnabled
                     && currentStatus == Status.Completed
                     && !isRewatching
@@ -96,7 +92,6 @@ namespace Shoko.AniSync.Helpers
 
                 if (isRewatchStart)
                 {
-                    // A single-episode series (e.g. a movie) is a complete rewatch in one play.
                     if (totalEpisodes == 1)
                     {
                         return new SyncDecision
@@ -119,11 +114,9 @@ namespace Shoko.AniSync.Helpers
                     };
                 }
 
-                // Already watched / not a rewatch start > leave MAL untouched.
                 return SyncDecision.NoChange(malEpisodeCount);
             }
 
-            // Unwatched in Shoko: only roll back by one when un-marking the highest episode.
             if (rollbackEnabled && shokoEpisodeNumber == malEpisodeCount && malEpisodeCount > 0)
             {
                 Status? newStatus = null;
