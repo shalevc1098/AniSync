@@ -79,7 +79,6 @@ namespace Shoko.AniSync.Api
             };
             if (query != null)
             {
-                // must truncate query to 64 characters. MAL API returns an error otherwise
                 query = StringFormatter.RemoveSpaces(query);
                 if (query.Length > 64)
                 {
@@ -267,7 +266,6 @@ namespace Shoko.AniSync.Api
 
             if (startDate != null)
             {
-                // DateTime.MinValue is used as a special value to clear the date
                 if (startDate.Value == DateTime.MinValue)
                 {
                     body.Add(new KeyValuePair<string, string>("start_date", ""));
@@ -280,7 +278,6 @@ namespace Shoko.AniSync.Api
 
             if (endDate != null)
             {
-                // DateTime.MinValue is used as a special value to clear the date
                 if (endDate.Value == DateTime.MinValue)
                 {
                     body.Add(new KeyValuePair<string, string>("finish_date", ""));
@@ -293,7 +290,6 @@ namespace Shoko.AniSync.Api
 
             if (score != null)
             {
-                // MAL accepts scores from 0-10, where 0 means no score
                 if (score.Value >= 0 && score.Value <= 10)
                 {
                     body.Add(new KeyValuePair<string, string>("score", score.Value.ToString()));

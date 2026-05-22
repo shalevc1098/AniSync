@@ -56,7 +56,6 @@ namespace Shoko.AniSync.Api
             int attempts = 0;
             int timeoutSeconds = defaultTimeoutSeconds;
 
-            // shokoUsername must be provided
             if (string.IsNullOrEmpty(shokoUsername))
             {
                 _logger.LogError("No Shoko username provided for authenticated API call");
@@ -72,8 +71,6 @@ namespace Shoko.AniSync.Api
                 return null;
             }
 
-            // Buffer form content bytes so we can recreate FormUrlEncodedContent on each retry
-            // (HttpClient disposes the content after sending, so reusing it throws ObjectDisposedException)
             byte[]? formContentBytes = null;
             string? formContentType = null;
             if (formUrlEncodedContent != null)
@@ -105,7 +102,6 @@ namespace Shoko.AniSync.Api
                 HttpResponseMessage? responseMessage = null;
                 try
                 {
-                    // Recreate content for each attempt since HttpClient disposes it after sending
                     HttpContent? bodyContent = null;
                     if (formContentBytes != null)
                     {
@@ -161,7 +157,6 @@ namespace Shoko.AniSync.Api
                     return responseMessage;
                 }
 
-                // Read error info before disposing
                 var failedStatusCode = responseMessage.StatusCode;
                 var errorContent = await responseMessage.Content.ReadAsStringAsync();
                 responseMessage.Dispose();
@@ -169,23 +164,18 @@ namespace Shoko.AniSync.Api
                 switch (failedStatusCode)
                 {
                     case HttpStatusCode.Unauthorized:
-                        // token has probably expired; try refreshing it
-                        // Use a lock to prevent concurrent refreshes from racing
                         await _refreshLock.WaitAsync();
                         try
                         {
-                            // Re-read auth from config - another thread may have already refreshed
                             var latestConfig = _configProvider.Load();
                             var latestAuth = latestConfig.GetAuthForShokoUser(shokoUsername, provider);
                             if (latestAuth != null && latestAuth.AccessToken != auth.AccessToken)
                             {
-                                // Token was already refreshed by another thread, use it
                                 auth = latestAuth;
                                 _logger.LogDebug("Token was already refreshed by another thread, retrying with new token");
                             }
                             else
                             {
-                                // We need to do the refresh ourselves
                                 UserApiAuth newAuth;
                                 try
                                 {

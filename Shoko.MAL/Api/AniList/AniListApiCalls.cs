@@ -111,7 +111,6 @@ namespace Shoko.AniSync.Api
                 ["progress"] = numberOfWatchedEpisodes
             };
 
-            // AniList has a first-class REPEATING status instead of a separate is_rewatching flag.
             if (isRewatching == true)
                 variables["status"] = "REPEATING";
             else if (status != null)
@@ -168,7 +167,6 @@ namespace Shoko.AniSync.Api
 
         private static object ToFuzzyDateInput(DateTime date)
         {
-            // DateTime.MinValue is the plugin's "clear the date" sentinel.
             if (date == DateTime.MinValue)
                 return new { year = (int?)null, month = (int?)null, day = (int?)null };
             return new { year = (int?)date.Year, month = (int?)date.Month, day = (int?)date.Day };
@@ -184,8 +182,6 @@ namespace Shoko.AniSync.Api
             return null;
         }
 
-        // JsonElement.TryGetInt32 throws if the value's kind isn't Number (e.g. JSON null),
-        // and AniList returns null for unset numeric fields (episodes, fuzzy-date parts, etc.).
         private static int? ReadInt(JsonElement parent, string prop)
             => parent.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var iv) ? iv : (int?)null;
 

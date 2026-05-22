@@ -1,12 +1,20 @@
-export const Logo = ({ className }: { className?: string }) => (
+export const Logo = ({
+    className,
+    primary = "#0EA5E9",
+    secondary = "#2F54EB"
+}: {
+    className?: string;
+    primary?: string;
+    secondary?: string;
+}) => (
     <svg viewBox="0 0 512 512" className={className} role="img" aria-label="AniSync">
         <path
             d="M 115.986 306.961 A 149.000 149.000 0 0 1 297.070 112.772 L 307.544 76.244 L 364.550 188.170 L 275.019 189.673 L 285.493 153.145 A 107.000 107.000 0 0 0 155.453 292.596 A 21.000 21.000 0 0 1 115.986 306.961 Z"
-            fill="#16C2E0"
+            fill={primary}
         />
         <path
             d="M 396.014 205.039 A 149.000 149.000 0 0 1 214.930 399.228 L 204.456 435.756 L 147.450 323.830 L 236.981 322.327 L 226.507 358.855 A 107.000 107.000 0 0 0 356.547 219.404 A 21.000 21.000 0 0 1 396.014 205.039 Z"
-            fill="#2F54EB"
+            fill={secondary}
         />
     </svg>
 );

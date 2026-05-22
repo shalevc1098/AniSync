@@ -20,7 +20,7 @@ namespace Shoko.AniSync.Models.ViewModels
         public string AnimeName { get; set; } = string.Empty;
         public int? AnimeId { get; set; }
         public int Episode { get; set; }
-        public string Action { get; set; } = string.Empty; // watched, unwatched, completed, rewatch
+        public string Action { get; set; } = string.Empty;
         public bool Success { get; set; }
         public string? Details { get; set; }
         public string? ErrorMessage { get; set; }

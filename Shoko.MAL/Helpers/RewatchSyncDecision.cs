@@ -108,7 +108,7 @@ namespace Shoko.AniSync.Helpers
                     {
                         ShouldUpdate = true,
                         NewEpisodeCount = 1,
-                        NewStatus = null, // stays Completed while rewatching
+                        NewStatus = null,
                         SetRewatching = true,
                         NumberOfTimesRewatched = null
                     };

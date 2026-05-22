@@ -57,9 +57,7 @@ namespace Shoko.AniSync.Configuration
         /// </summary>
         [JsonProperty("expires_at")]
         public long? ExpiresAt { get; set; }
-        
-        // Per-user settings (will use global defaults if null)
-        
+
         [JsonProperty("update_nsfw")]
         public bool? UpdateNsfw { get; set; }
         

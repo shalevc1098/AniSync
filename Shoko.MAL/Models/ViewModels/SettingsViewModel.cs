@@ -20,8 +20,7 @@ namespace Shoko.AniSync.Models.ViewModels
         // Advanced
         public int SyncDelaySeconds { get; set; } = 5;
         public bool EnableDebugLogging { get; set; } = false;
-        
-        // Flags to indicate if using user-specific or global settings
+
         public bool HasUserSettings { get; set; } = false;
     }
 }

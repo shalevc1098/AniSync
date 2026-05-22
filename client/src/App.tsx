@@ -22,7 +22,6 @@ const App = () => {
     const queryClient = useQueryClient();
     const { data: me } = useWhoami();
 
-    // The OAuth callback redirects back to /anisync?success=connected or ?error=...
     const success = params.get("success");
     const error = params.get("error");
     useEffect(() => {
@@ -44,7 +43,7 @@ const App = () => {
                     <div className="flex items-center">
                         <Logo className="size-7" />
                         <span className="text-lg font-semibold tracking-tight">
-                            <span className="text-[#16C2E0]">Ani</span>
+                            <span className="text-[#0EA5E9]">Ani</span>
                             <span className="text-foreground">Sync</span>
                         </span>
                     </div>

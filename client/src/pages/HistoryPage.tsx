@@ -4,6 +4,7 @@ import { useHistory } from "@/api/queries";
 import { useAuthStore } from "@/store/auth";
 import { useNow } from "@/hooks/use-now";
 import { formatRelative } from "@/lib/format";
+import { groupHistory } from "@/lib/history";
 import { ProviderBadge } from "@/components/provider-badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -48,9 +49,13 @@ const HistoryPage = () => {
 
     const rows = useMemo(() => {
         const all = data?.history ?? [];
-        if (filter === "all") return all;
-        if (filter === "failed") return all.filter((e) => !e.success);
-        return all.filter((e) => e.provider?.name === filter);
+        const filtered =
+            filter === "all"
+                ? all
+                : filter === "failed"
+                  ? all.filter((e) => !e.success)
+                  : all.filter((e) => e.provider?.name === filter);
+        return groupHistory(filtered);
     }, [data, filter]);
 
     if (isLoading) return <Skeleton className="h-96 w-full" />;
@@ -109,7 +114,7 @@ const HistoryPage = () => {
                                 const showHeader =
                                     i === 0 || label !== dateLabel(rows[i - 1].timestamp);
                                 return (
-                                    <Fragment key={`${e.timestamp}-${e.anime_id}-${i}`}>
+                                    <Fragment key={`${e.timestamp}-${e.anime_title}-${i}`}>
                                         {showHeader && (
                                             <TableRow className="hover:bg-transparent">
                                                 <TableCell
@@ -146,9 +151,11 @@ const HistoryPage = () => {
                                                 {e.action}
                                             </TableCell>
                                             <TableCell>
-                                                {e.provider?.name && (
-                                                    <ProviderBadge provider={e.provider.name} />
-                                                )}
+                                                <div className="flex flex-wrap gap-1">
+                                                    {e.providers.map((p) => (
+                                                        <ProviderBadge key={p.name} provider={p.name} />
+                                                    ))}
+                                                </div>
                                             </TableCell>
                                             <TableCell
                                                 className="whitespace-nowrap text-right text-muted-foreground"
@@ -157,7 +164,7 @@ const HistoryPage = () => {
                                                 {formatRelative(e.timestamp)}
                                             </TableCell>
                                             <TableCell className="text-right">
-                                                {e.success ? (
+                                                {e.allSuccess ? (
                                                     <CircleCheck className="ml-auto size-4 text-success" />
                                                 ) : (
                                                     <CircleX className="ml-auto size-4 text-destructive" />

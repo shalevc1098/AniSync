@@ -30,7 +30,6 @@ namespace Shoko.AniSync.Helpers
         {
             try
             {
-                // Try to load new format first
                 if (File.Exists(_historyFilePath))
                 {
                     var json = File.ReadAllText(_historyFilePath);
@@ -63,7 +62,6 @@ namespace Shoko.AniSync.Helpers
             await _fileLock.WaitAsync();
             try
             {
-                // Ensure user history exists
                 if (!_userHistories.ContainsKey(username))
                 {
                     _userHistories[username] = new UserHistory();
@@ -120,7 +118,6 @@ namespace Shoko.AniSync.Helpers
 
                 if (string.IsNullOrEmpty(shokoUsername))
                 {
-                    // Calculate stats for all users
                     foreach (var kvp in _userHistories)
                     {
                         var username = kvp.Key;
@@ -140,7 +137,6 @@ namespace Shoko.AniSync.Helpers
 
                         stats.SyncsByUser[username] = userHistory.TotalSyncs;
 
-                        // Group by action
                         foreach (var entry in userHistory.History)
                         {
                             var syncAction = (SyncAction)entry.Action;
@@ -154,7 +150,6 @@ namespace Shoko.AniSync.Helpers
                 }
                 else if (_userHistories.ContainsKey(shokoUsername))
                 {
-                    // Calculate stats for specific user
                     var userHistory = _userHistories[shokoUsername];
                     
                     stats.TotalSyncs = userHistory.TotalSyncs;
@@ -163,7 +158,6 @@ namespace Shoko.AniSync.Helpers
                     stats.LastSyncTime = userHistory.LastSync;
                     stats.SyncsByUser[shokoUsername] = userHistory.TotalSyncs;
 
-                    // Group by action
                     foreach (var entry in userHistory.History)
                     {
                         var syncAction = (SyncAction)entry.Action;
@@ -194,8 +188,6 @@ namespace Shoko.AniSync.Helpers
                 if (!_userHistories.TryGetValue(username, out var userHistory))
                     return null;
 
-                // Snapshot under the lock - callers enumerate this after the lock is released,
-                // and a concurrent watch event mutates the live History list.
                 return new UserHistory
                 {
                     History = userHistory.History.ToList(),
@@ -243,7 +235,6 @@ namespace Shoko.AniSync.Helpers
                     WriteIndented = true,
                     PropertyNamingPolicy = JsonNamingPolicy.CamelCase
                 });
-                // Write to temp file first, then rename atomically to prevent corruption on crash
                 var tempPath = _historyFilePath + ".tmp";
                 await File.WriteAllTextAsync(tempPath, json);
                 File.Move(tempPath, _historyFilePath, overwrite: true);
@@ -258,10 +249,11 @@ namespace Shoko.AniSync.Helpers
         /// LogSync method that uses the new format
         /// </summary>
         public Task LogSyncAsync(string username, int? animeId, string animeTitle, int episodeNumber,
-            string action, bool success, Status status, string providerName = "MAL", string? animeImage = null, string? providerUsername = null)
+            string action, bool success, Status status, string providerName = "MAL", string? animeImage = null, string? providerUsername = null, string? eventId = null)
         {
             var entry = new HistoryEntry
             {
+                EventId = eventId,
                 Timestamp = DateTime.Now,
                 Action = (int)SyncActionHelper.ParseAction(action),
                 AnimeId = animeId,
@@ -282,7 +274,6 @@ namespace Shoko.AniSync.Helpers
         public void LogSync(string username, int? animeId, string animeTitle, int episodeNumber,
             string action, bool success, Status status, string providerName = "MAL", string? animeImage = null, string? providerUsername = null)
         {
-            // Fire and forget - don't wait for the save
             _ = Task.Run(async () =>
             {
                 try

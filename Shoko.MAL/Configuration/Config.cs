@@ -33,11 +33,8 @@ namespace Shoko.AniSync.Configuration
         [JsonProperty("stateSigningKey")]
         public string? StateSigningKey { get; set; }
 
-        // No migrations needed: config lives in Shoko's store. The one-time import from the
-        // legacy plugins/AniSync/{config,global-settings}.json has already run.
         public static string ApplyMigrations(string config, IApplicationPaths applicationPaths) => config;
 
-        // Get all authenticated users from the config
         public List<UserApiAuth> GetAuthenticatedUsers()
         {
             var allAuths = new List<UserApiAuth>();
@@ -66,7 +63,6 @@ namespace Shoko.AniSync.Configuration
             return allAuths;
         }
 
-        // Get user config object for a specific user
         private UserConfig? GetUserConfig(string? username)
         {
             if (string.IsNullOrEmpty(username))
@@ -80,13 +76,11 @@ namespace Shoko.AniSync.Configuration
             return null;
         }
 
-        // Set user config object for a specific user
         private void SetUserConfig(string username, UserConfig config)
         {
             Users[username] = config;
         }
 
-        // The providers this Shoko user has connected (parsed from the per-user Providers keys).
         public List<ApiName> GetConnectedProviders(string? shokoUsername)
         {
             var result = new List<ApiName>();
@@ -100,7 +94,6 @@ namespace Shoko.AniSync.Configuration
             return result;
         }
 
-        // Get auth for a specific Shoko user and provider
         public UserApiAuth? GetAuthForShokoUser(string? shokoUsername, ApiName? provider = null)
         {
             if (string.IsNullOrEmpty(shokoUsername)) return null;
@@ -130,7 +123,6 @@ namespace Shoko.AniSync.Configuration
             return null;
         }
 
-        // Add or update auth for a Shoko user
         public void SetAuthForShokoUser(string shokoUsername, ApiName provider, UserApiAuth auth)
         {
             if (string.IsNullOrEmpty(shokoUsername) || auth == null) return;
@@ -151,7 +143,6 @@ namespace Shoko.AniSync.Configuration
             SetUserConfig(shokoUsername, userConfig);
         }
 
-        // Set user settings for a Shoko user
         public void SetUserSettings(string shokoUsername, UserSettings settings)
         {
             if (string.IsNullOrEmpty(shokoUsername)) return;
@@ -161,8 +152,6 @@ namespace Shoko.AniSync.Configuration
 
             SetUserConfig(shokoUsername, userConfig);
         }
-
-        // Helper methods to get user-specific settings
 
         public bool GetUpdateNsfw(string? shokoUsername)
         {

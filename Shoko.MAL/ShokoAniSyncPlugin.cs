@@ -35,7 +35,6 @@ namespace Shoko.AniSync
         private readonly ConfigurationProvider<Config> _configProvider;
         public static SyncHistoryManager SyncHistory { get; private set; } = null!;
 
-        // Shoko will inject the IMetadataService for you
         public ShokoAniSyncPlugin(IApplicationPaths applicationPaths, IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory, IMemoryCache memoryCache, IMetadataService metadataService, IUserDataService userDataService, ConfigurationProvider<Config> configProvider)
         {
             _httpClientFactory = httpClientFactory;
@@ -47,7 +46,6 @@ namespace Shoko.AniSync
             _applicationPaths = applicationPaths;
             _configProvider = configProvider;
 
-            // Initialize sync history manager
             SyncHistory = new SyncHistoryManager(Path.Combine(applicationPaths.PluginsPath, "AniSync"), loggerFactory);
         }
 
@@ -56,9 +54,6 @@ namespace Shoko.AniSync
         /// </summary>
         private string? GetEpisodeThumbnailUrl(IShokoEpisode? episode, Anime? anime)
         {
-            // The episode still (TMDB screenshot) is exposed as a Backdrop on the episode;
-            // fall back to the series poster. Always a Shoko-served image, so both providers
-            // get the same picture (GetImages handles the case where none is marked preferred).
             var image = episode?.GetPreferredImageForType(ImageEntityType.Backdrop)
                 ?? episode?.GetImages(imageType: ImageEntityType.Backdrop)?.FirstOrDefault()
                 ?? episode?.Series?.GetPreferredImageForType(ImageEntityType.Primary)
@@ -66,8 +61,6 @@ namespace Shoko.AniSync
             if (image == null)
                 return null;
 
-            // The v3 image endpoint (/api/v3/Image/{source}/{type}/{id}) keys on the legacy
-            // integer id, so LocalID is required here despite being marked obsolete.
 #pragma warning disable CS0618
             return $"/api/v3/Image/{image.Source}/{image.Type}/{image.LocalID}";
 #pragma warning restore CS0618
@@ -142,7 +135,6 @@ namespace Shoko.AniSync
                     });
                     if (titleMatch)
                     {
-                        // rough match
                         return detailedRelatedAnime;
                     }
                 }
@@ -164,7 +156,6 @@ namespace Shoko.AniSync
 
         private async Task<Anime?> FetchIdFromProvider(IApiCallHelpers apiCallHelpers, ApiName provider, IShokoEpisode episode, Config config, string? shokoUsername = null)
         {
-            // Key by provider (results differ per provider) and username (NSFW is per-user).
             var cacheKey = $"search_{provider}_{episode.Series?.AnidbAnimeID ?? 0}_{shokoUsername ?? "default"}";
 
             var updateNsfw = config.GetUpdateNsfw(shokoUsername);
@@ -236,7 +227,6 @@ namespace Shoko.AniSync
             {
                 var config = _configProvider.Load();
 
-                // Get the user who triggered this event
                 var shokoUser = e.User;
                 if (shokoUser != null)
                 {
@@ -248,18 +238,15 @@ namespace Shoko.AniSync
                     _logger.LogWarning("No user information available in episode event");
                 }
 
-                // Check if auto-sync is enabled for this user
                 if (!config.GetEnableAutoSync(shokoUser?.Username))
                 {
                     _logger.LogDebug("Auto-sync is disabled for user {Username}, skipping", shokoUser?.Username);
                     return;
                 }
 
-                // Skip import events
                 if (e.Reason.HasFlag(EpisodeUserDataSaveReason.Import))
                     return;
 
-                // Skip events that clearly don't affect watch state
                 const EpisodeUserDataSaveReason nonWatchReasons =
                     EpisodeUserDataSaveReason.IsFavorite |
                     EpisodeUserDataSaveReason.UserTags |
@@ -283,15 +270,13 @@ namespace Shoko.AniSync
                     return;
                 }
 
-                bool isWatched = e.UserData.IsWatched;
+                bool isWatched = e.UserData.LastPlayedAt.HasValue;
                 int shokoEpisodeNumber = maxEpisode.EpisodeNumber;
                 int playbackCount = e.UserData.PlaybackCount;
 
                 _logger.LogInformation("Episode {EpisodeNumber} event: Reason={Reason}, PlaybackCount={Count}, IsWatched={Watched} for {Title}",
                     shokoEpisodeNumber, e.Reason, playbackCount, isWatched, maxEpisode.Series?.Title ?? "Unknown");
 
-                // Shoko fires several events per user action; collapse identical ones so the
-                // same episode isn't synced repeatedly within a short window.
                 var dedupeKey = $"watch_{shokoUser.Username}_{maxEpisode.AnidbEpisodeID}_{isWatched}_{playbackCount}";
                 if (_memoryCache.TryGetValue(dedupeKey, out _))
                 {
@@ -299,11 +284,8 @@ namespace Shoko.AniSync
                         maxEpisode.Series?.Title ?? "Unknown", shokoEpisodeNumber);
                     return;
                 }
-                // Short window: long enough to absorb Shoko's burst of identical events for one
-                // action (~15s apart observed), short enough not to block a genuine later re-action.
                 _memoryCache.Set(dedupeKey, true, TimeSpan.FromSeconds(30));
 
-                // Sync to every connected provider; one failing doesn't abort the rest.
                 var providers = config.GetConnectedProviders(shokoUser.Username!);
                 if (providers.Count == 0)
                 {
@@ -311,11 +293,12 @@ namespace Shoko.AniSync
                     return;
                 }
 
+                var eventId = Guid.NewGuid().ToString();
                 foreach (var syncProvider in providers)
                 {
                     try
                     {
-                        await SyncEpisodeToProviderAsync(syncProvider, shokoUser, maxEpisode, isWatched, shokoEpisodeNumber, playbackCount);
+                        await SyncEpisodeToProviderAsync(syncProvider, shokoUser, maxEpisode, isWatched, shokoEpisodeNumber, playbackCount, eventId);
                     }
                     catch (Exception ex)
                     {
@@ -329,7 +312,7 @@ namespace Shoko.AniSync
             }
         }
 
-        private async Task SyncEpisodeToProviderAsync(ApiName provider, IUser shokoUser, IShokoEpisode maxEpisode, bool isWatched, int shokoEpisodeNumber, int playbackCount)
+        private async Task SyncEpisodeToProviderAsync(ApiName provider, IUser shokoUser, IShokoEpisode maxEpisode, bool isWatched, int shokoEpisodeNumber, int playbackCount, string eventId)
         {
             var config = _configProvider.Load();
 
@@ -342,7 +325,6 @@ namespace Shoko.AniSync
             _logger.LogInformation("Using {Provider} account {Account} for Shoko user {ShokoUser}",
                 provider, userAuth.Username, shokoUser.Username);
 
-            // Proactive token expiry check - attempt refresh before making API calls
             if (userAuth.ExpiresAt.HasValue && DateTimeOffset.UtcNow.ToUnixTimeSeconds() > userAuth.ExpiresAt.Value)
             {
                 _logger.LogWarning("{Provider} token expired for user {User}, attempting refresh...", provider, shokoUser.Username);
@@ -372,7 +354,6 @@ namespace Shoko.AniSync
                 {
                     _logger.LogInformation("Found Anime: {Title} ({Id})", anime.Title, anime.Id);
 
-                    // Check SyncOnlyCompleted - if enabled, skip non-completion syncs
                     bool syncOnlyCompleted = config.GetSyncOnlyCompleted(shokoUser?.Username);
                     if (syncOnlyCompleted && isWatched && anime.NumEpisodes > 0 && shokoEpisodeNumber < anime.NumEpisodes)
                     {
@@ -381,7 +362,6 @@ namespace Shoko.AniSync
                         return;
                     }
 
-                    // Fetch the anime from user's list to get current status
                     var animeWithStatus = await apiCallHelpers.GetAnime(anime.Id, alternativeId: anime.AlternativeId, getRelated: false, shokoUsername: shokoUser?.Username);
 
                     if (animeWithStatus?.MyListStatus != null)
@@ -427,23 +407,18 @@ namespace Shoko.AniSync
                             _logger.LogInformation("Completed rewatch #{Count} for {Title}", numberOfTimesRewatched, anime.Title);
                         }
 
-                        // Perform the update if needed
                         if (shouldUpdate)
                         {
                             _logger.LogInformation("Updating {Provider} status for {Title}: Episodes: {Episodes}, Status: {Status}, Rewatching: {Rewatching}",
                                 provider, anime.Title ?? "Unknown", newEpisodeCount, newStatus?.ToString() ?? "unchanged", setRewatching?.ToString() ?? "unchanged");
 
-                            // Call UpdateAnime with the appropriate status
                             UpdateAnimeStatusResponse? updateResult = null;
 
-                            // Determine which status to use: new status if changed, otherwise keep current
                             var statusToUse = newStatus ?? currentStatus;
 
-                            // Add date tracking
                             DateTime? startDate = null;
                             DateTime? endDate = null;
 
-                            // Set start date based on user preference
                             bool setFromAnyEpisode = config.GetSetStartDateFromAnyEpisode(shokoUser?.Username);
 
                             if (malEpisodeCount == 0 && newEpisodeCount > 0)
@@ -471,7 +446,6 @@ namespace Shoko.AniSync
                                 }
                             }
 
-                            // Clear dates when completely unwatching (going to 0 episodes)
                             if (newEpisodeCount == 0 && malEpisodeCount > 0)
                             {
                                 startDate = DateTime.MinValue;
@@ -479,13 +453,11 @@ namespace Shoko.AniSync
                                 _logger.LogInformation("Clearing start and end dates for {Title} (unwatched completely)", anime.Title);
                             }
 
-                            // When starting a rewatch, preserve the original dates
                             if (setRewatching == true && currentStatus == Status.Completed)
                             {
                                 _logger.LogInformation("Starting rewatch for {Title}, preserving original dates", anime.Title);
                             }
 
-                            // Set end date if completing the series for the first time (not during rewatch)
                             if (newStatus == Status.Completed && currentStatus != Status.Completed)
                             {
                                 var existingEndDate = animeWithStatus?.MyListStatus?.FinishDate;
@@ -500,7 +472,6 @@ namespace Shoko.AniSync
                                 }
                             }
 
-                            // Clear end date when rolling back from completed
                             if (currentStatus == Status.Completed && newStatus == Status.Watching)
                             {
                                 endDate = DateTime.MinValue;
@@ -523,7 +494,6 @@ namespace Shoko.AniSync
                             {
                                 _logger.LogInformation("Successfully updated {Provider} status for {Title}", provider, anime.Title);
 
-                                // Log to sync history
                                 SyncAction syncAction = SyncAction.Updated;
                                 string? details = null;
 
@@ -571,7 +541,8 @@ namespace Shoko.AniSync
                                         statusToUse,
                                         provider.ToString(),
                                         GetEpisodeThumbnailUrl(maxEpisode, anime),
-                                        userAuth?.Username ?? "Unknown User"
+                                        userAuth?.Username ?? "Unknown User",
+                                        eventId: eventId
                                     );
                             }
                             else
@@ -582,7 +553,6 @@ namespace Shoko.AniSync
                     }
                     else
                     {
-                        // Anime not in user's list - add it if watched
                         if (isWatched)
                         {
                             _logger.LogInformation("Adding {Title} to {Provider} list with episode {Episode}", anime.Title, provider, shokoEpisodeNumber);
@@ -591,11 +561,9 @@ namespace Shoko.AniSync
                                 ? Status.Completed
                                 : Status.Watching;
 
-                            // Set dates when adding anime to list
                             DateTime? startDate = DateTime.Now.Date;
                             DateTime? endDate = null;
 
-                            // If completing on first watch, set both start and end date
                             if (newStatus == Status.Completed)
                             {
                                 endDate = DateTime.Now.Date;
@@ -620,7 +588,6 @@ namespace Shoko.AniSync
                             {
                                 _logger.LogInformation("Successfully added {Title} to {Provider} list", anime.Title, provider);
 
-                                // Log to sync history
                                 SyncAction syncAction = newStatus == Status.Completed ? SyncAction.Completed : SyncAction.AddedToList;
                                 string? details = newStatus == Status.Completed
                                     ? "First time completion"
@@ -637,7 +604,8 @@ namespace Shoko.AniSync
                                         newStatus,
                                         provider.ToString(),
                                         GetEpisodeThumbnailUrl(maxEpisode, anime),
-                                        userAuth?.Username ?? "Unknown User"
+                                        userAuth?.Username ?? "Unknown User",
+                                        eventId: eventId
                                     );
                             }
                             else

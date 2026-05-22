@@ -57,6 +57,7 @@ export const GlobalSettingsSchema = z.object({
 });
 
 export const HistoryEntrySchema = z.object({
+    event_id: z.string().nullable().optional(),
     timestamp: z.string(),
     action: z.string(),
     anime_id: z.number().nullable(),

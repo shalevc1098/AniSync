@@ -22,11 +22,14 @@ namespace Shoko.AniSync.Models
     /// </summary>
     public class HistoryEntry
     {
+        [JsonPropertyName("event_id")]
+        public string? EventId { get; set; }
+
         [JsonPropertyName("timestamp")]
         public DateTime Timestamp { get; set; } = DateTime.Now;
 
         [JsonPropertyName("action")]
-        public int Action { get; set; }  // Stores SyncAction enum as int
+        public int Action { get; set; }
 
         [JsonPropertyName("anime_id")]
         public int? AnimeId { get; set; }
@@ -41,7 +44,7 @@ namespace Shoko.AniSync.Models
         public int? EpisodeNumber { get; set; }
 
         [JsonPropertyName("status")]
-        public int Status { get; set; }  // Stores Status enum as int
+        public int Status { get; set; }
 
         [JsonPropertyName("success")]
         public bool Success { get; set; }
@@ -78,7 +81,7 @@ namespace Shoko.AniSync.Models
         /// </summary>
         public void AddEntry(HistoryEntry entry)
         {
-            History.Insert(0, entry); // Most recent first
+            History.Insert(0, entry);
             TotalSyncs++;
             if (!entry.Success)
             {
@@ -86,7 +89,6 @@ namespace Shoko.AniSync.Models
             }
             LastSync = entry.Timestamp;
 
-            // Trim history to keep only recent entries
             if (History.Count > 1000)
             {
                 History = History.Take(1000).ToList();

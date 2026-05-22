@@ -79,9 +79,6 @@ namespace Shoko.AniSync.Controllers
         [Route("buildAuthorizeRequestUrl")]
         public IActionResult BuildAuthorizeRequestUrl(ApiName provider, string? baseUrl = null)
         {
-            // Called via fetch, so the apikey header is present. The OAuth state is built
-            // and signed here, bound to the resolved caller - any client-supplied user is
-            // ignored, which prevents linking a MAL account to someone else on callback.
             var shokoUsername = GetCurrentShokoUser();
             if (string.IsNullOrEmpty(shokoUsername))
                 return Unauthorized();
@@ -170,8 +167,6 @@ namespace Shoko.AniSync.Controllers
         {
             try
             {
-                // The state must be a valid, unexpired, server-signed token. Its bound user
-                // and provider are trusted; a forged/tampered state is rejected.
                 if (string.IsNullOrEmpty(state) || !TryVerifyState(state, out var shokoUsername, out var callbackBaseUrl, out var provider) || string.IsNullOrEmpty(shokoUsername))
                 {
                     _logger.LogWarning("OAuth callback rejected: missing or invalid signed state");
@@ -201,7 +196,6 @@ namespace Shoko.AniSync.Controllers
             }
         }
         
-        // Proxy to Shoko's User/Current API endpoint
         [HttpGet]
         [Route("api/v3/User/Current")]
         public async Task<IActionResult> GetCurrentUser()
@@ -218,7 +212,6 @@ namespace Shoko.AniSync.Controllers
                 var httpClient = _httpClientFactory.CreateClient();
                 httpClient.DefaultRequestHeaders.Add("apikey", apiKey);
                 
-                // Since we're running as a plugin, we need to use localhost
                 using var response = await httpClient.GetAsync($"{ShokoLocalUrl}/api/v3/User/Current");
 
                 if (!response.IsSuccessStatusCode)
@@ -281,7 +274,6 @@ namespace Shoko.AniSync.Controllers
             return Json(new { success = true });
         }
 
-        // Disconnect a provider for the current user. Defaults to Mal for backward compatibility.
         [HttpPost]
         [Route("Logout")]
         public IActionResult Logout(string provider = "Mal")
@@ -305,7 +297,6 @@ namespace Shoko.AniSync.Controllers
             return Json(new { success = true });
         }
 
-        // Refresh the access token for a provider. Defaults to Mal for backward compatibility.
         [HttpPost]
         [Route("refresh-token")]
         public async Task<IActionResult> RefreshToken(string provider = "Mal")
@@ -359,14 +350,11 @@ namespace Shoko.AniSync.Controllers
             }
         }
         
-        // Helper method to get current Shoko user from query, header, or request.
-        // Result is cached per-request in HttpContext.Items to avoid redundant HTTP calls.
         private const string ShokoUserCacheKey = "__AniSync_CurrentShokoUser";
         private string? GetCurrentShokoUser()
         {
             var httpContext = _httpContextAccessor?.HttpContext;
 
-            // Return cached result if we already resolved the user this request
             if (httpContext?.Items.TryGetValue(ShokoUserCacheKey, out var cached) == true)
             {
                 return cached as string;
@@ -375,7 +363,6 @@ namespace Shoko.AniSync.Controllers
             string? result = null;
             try
             {
-                // Resolve the user from the request (apikey) synchronously via Shoko - no HTTP round-trip.
                 if (httpContext != null)
                     result = _userService?.GetUserFromHttpContext(httpContext)?.Username;
             }
@@ -384,7 +371,6 @@ namespace Shoko.AniSync.Controllers
                 _logger.LogWarning(ex, "Failed to resolve current Shoko user");
             }
 
-            // Cache result (even null) for this request
             if (httpContext != null)
             {
                 httpContext.Items[ShokoUserCacheKey] = result;
@@ -402,7 +388,6 @@ namespace Shoko.AniSync.Controllers
                 return Unauthorized(new { error = "Authentication required" });
             }
 
-            // Client secrets are sensitive - only admins may read them.
             if (!IsCurrentUserAdmin())
             {
                 return StatusCode(403, new { error = "Only an administrator can view API credentials" });
@@ -428,7 +413,6 @@ namespace Shoko.AniSync.Controllers
                 return Unauthorized(new { error = "Authentication required" });
             }
 
-            // Global API credentials affect every user, so only admins may change them.
             if (!IsCurrentUserAdmin())
             {
                 return StatusCode(403, new { error = "Only an administrator can change API credentials" });
@@ -489,14 +473,12 @@ namespace Shoko.AniSync.Controllers
                     return Json(new { error = "Sync history not available" });
                 }
 
-                // Always use authenticated user - never accept username from query params
                 username = GetCurrentShokoUser();
                 _logger.LogInformation("Getting history for user from apikey: {Username}", username ?? "null");
 
                 if (string.IsNullOrEmpty(username))
                 {
                     _logger.LogWarning("No username found from apikey header");
-                    // Fail closed: no resolved user means no data to return.
                     return Unauthorized();
                 }
 
@@ -515,14 +497,13 @@ namespace Shoko.AniSync.Controllers
                     ? userHistory.History.Take(limit.Value).ToList()
                     : userHistory.History;
 
-                // Transform history entries to include generated messages
                 var transformedEntries = historyEntries.Select((entry, index) => {
                     var syncAction = (SyncAction)entry.Action;
-                    // Check if this is the first occurrence of this anime (for "first time" detection)
-                    var isFirstTime = index == historyEntries.Count - 1 || 
+                    var isFirstTime = index == historyEntries.Count - 1 ||
                         !historyEntries.Skip(index + 1).Any(h => h.AnimeId == entry.AnimeId);
                     
                     return new {
+                        event_id = entry.EventId,
                         timestamp = entry.Timestamp,
                         action = SyncActionHelper.GetActionText(syncAction),
                         anime_id = entry.AnimeId,
@@ -704,8 +685,6 @@ namespace Shoko.AniSync.Controllers
             }
         }
         
-        // Serves the embedded SPA: a real built asset if the path matches one, else index.html
-        // so client-side routing handles the URL. Specific API routes win over this catch-all.
         [HttpGet]
         [Route("{**path}")]
         public IActionResult Spa(string? path = null)

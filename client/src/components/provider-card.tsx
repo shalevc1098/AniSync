@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { buildAuthorizeUrl, useDisconnect } from "@/api/queries";
 import { PROVIDER_API, PROVIDER_LABELS } from "@/lib/format";
 import type { ProviderStatus } from "@/lib/schemas";
-import aniListLogo from "@/assets/anilist.png";
+import aniListLogo from "@/assets/anilist.svg";
 import malLogo from "@/assets/mal.svg";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

@@ -98,8 +98,6 @@ const groups: { legend: string; toggles: Toggle[] }[] = [
     }
 ];
 
-// Controlled number input that keeps the raw text locally so mid-typing values
-// (e.g. "0." on the way to "0.5") aren't clobbered; commits only valid numbers.
 const NumberInput = ({
     field,
     ...props
@@ -120,7 +118,6 @@ const NumberInput = ({
                 if (!Number.isNaN(v)) field.handleChange(v);
             }}
             onBlur={() => {
-                // If the field was left empty/half-typed, commit 0 and resync the display.
                 if (Number.isNaN(Number.parseFloat(text))) {
                     field.handleChange(0);
                     setText("0");
@@ -130,14 +127,19 @@ const NumberInput = ({
     );
 };
 
+const sameSettings = (a: Settings, b: Settings) =>
+    (Object.keys(a) as (keyof Settings)[]).every((k) => a[k] === b[k]);
+
 const SettingsForm = ({ initial }: { initial: Settings }) => {
     const save = useSaveSettings();
+    const [baseline, setBaseline] = useState(initial);
     const form = useForm({
         defaultValues: initial,
         validators: { onChange: SettingsSchema },
         onSubmit: async ({ value }) => {
             await save.mutateAsync(value);
-            form.reset(value); // clear dirty state so "Unsaved changes" goes away
+            form.reset(value);
+            setBaseline(value);
             toast.success("Settings saved");
         }
     });
@@ -224,18 +226,29 @@ const SettingsForm = ({ initial }: { initial: Settings }) => {
                 ))}
             </div>
 
-            <form.Subscribe selector={(s) => [s.canSubmit, s.isSubmitting, s.isDirty] as const}>
-                {([canSubmit, isSubmitting, isDirty]) => (
-                    <div className="sticky bottom-0 mt-6 flex items-center justify-end gap-3 border-t bg-background/80 py-4 backdrop-blur">
-                        {isDirty && (
-                            <span className="text-sm text-muted-foreground">Unsaved changes</span>
-                        )}
-                        <Button type="submit" disabled={!canSubmit || !isDirty}>
-                            {isSubmitting && <Spinner />}
-                            Save settings
-                        </Button>
-                    </div>
-                )}
+            <form.Subscribe
+                selector={(s) => ({
+                    canSubmit: s.canSubmit,
+                    isSubmitting: s.isSubmitting,
+                    values: s.values
+                })}
+            >
+                {({ canSubmit, isSubmitting, values }) => {
+                    const dirty = !sameSettings(values, baseline);
+                    return (
+                        <div className="mt-6 flex items-center gap-3">
+                            <Button type="submit" disabled={!canSubmit || !dirty}>
+                                {isSubmitting && <Spinner />}
+                                Save settings
+                            </Button>
+                            {dirty && (
+                                <span className="text-sm text-muted-foreground">
+                                    Unsaved changes
+                                </span>
+                            )}
+                        </div>
+                    );
+                }}
             </form.Subscribe>
         </form>
     );
@@ -256,14 +269,15 @@ const ApiConfigForm = () => {
         );
     }
 
-    const current: GlobalSettings = creds ??
-        data ?? {
-            malClientId: "",
-            malClientSecret: "",
-            aniListClientId: "",
-            aniListClientSecret: ""
-        };
+    const base: GlobalSettings = data ?? {
+        malClientId: "",
+        malClientSecret: "",
+        aniListClientId: "",
+        aniListClientSecret: ""
+    };
+    const current: GlobalSettings = creds ?? base;
     const set = (patch: Partial<GlobalSettings>) => setCreds({ ...current, ...patch });
+    const dirty = (Object.keys(base) as (keyof GlobalSettings)[]).some((k) => current[k] !== base[k]);
 
     const fields: { key: keyof GlobalSettings; label: string; secret?: boolean }[] = [
         { key: "aniListClientId", label: "AniList Client ID" },
@@ -289,11 +303,11 @@ const ApiConfigForm = () => {
             </div>
             <Button
                 className="w-fit"
-                disabled={save.isPending}
+                disabled={save.isPending || !dirty}
                 onClick={() =>
                     save.mutate(current, {
                         onSuccess: (r) => {
-                            setCreds(current); // keep showing the saved values (no refetch flicker)
+                            setCreds(current);
                             toast.success(
                                 r.reAuthRequired
                                     ? "Saved. Changed credentials cleared connections, please reconnect."

@@ -23,13 +23,12 @@ export const formatRelative = (iso: string): string => {
     return date.toLocaleDateString(undefined, { month: "short", day: "2-digit" });
 };
 
-// Brand palette: AniList -> Sync Cyan #16C2E0, MAL -> Deep Blue #2F54EB.
 export const providerColor = (provider: string): string => {
     switch (provider.toLowerCase()) {
         case "anilist":
-            return "oklch(0.755 0.118 209)";
+            return "oklch(0.68 0.16 242)";
         case "mal":
-            return "oklch(0.52 0.23 264)";
+            return "oklch(0.5 0.13 264)";
         default:
             return "var(--muted-foreground)";
     }

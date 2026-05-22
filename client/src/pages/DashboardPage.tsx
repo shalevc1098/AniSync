@@ -12,6 +12,7 @@ import {
 import { useDashboard, useHistory } from "@/api/queries";
 import { useAuthStore } from "@/store/auth";
 import { useNow } from "@/hooks/use-now";
+import { groupHistory } from "@/lib/history";
 import type { ProviderStatus } from "@/lib/schemas";
 import { formatLastSync, formatRelative } from "@/lib/format";
 import { ProviderCard } from "@/components/provider-card";
@@ -22,12 +23,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const RecentActivity = () => {
-    const { data, isLoading, isError } = useHistory(6);
+    const { data, isLoading, isError } = useHistory(20);
     const apiKey = useAuthStore((s) => s.apiKey);
     const thumb = (path: string | null) =>
         path
             ? `${path}${path.includes("?") ? "&" : "?"}apikey=${encodeURIComponent(apiKey)}`
             : null;
+    const groups = data ? groupHistory(data.history).slice(0, 6) : [];
 
     return (
         <Card>
@@ -47,11 +49,11 @@ const RecentActivity = () => {
                         <p className="text-sm">No sync activity yet.</p>
                     </div>
                 )}
-                {data?.history.map((e, i) => {
+                {groups.map((e, i) => {
                     const src = thumb(e.anime_image);
                     return (
                         <div
-                            key={`${e.timestamp}-${e.anime_id}-${i}`}
+                            key={`${e.timestamp}-${e.anime_title}-${i}`}
                             className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-muted/50"
                         >
                             {src ? (
@@ -78,12 +80,12 @@ const RecentActivity = () => {
                                     {e.action} {formatRelative(e.timestamp)}
                                 </p>
                             </div>
-                            {e.provider?.name && (
-                                <span className="shrink-0">
-                                    <ProviderBadge provider={e.provider.name} />
-                                </span>
-                            )}
-                            {e.success ? (
+                            <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                                {e.providers.map((p) => (
+                                    <ProviderBadge key={p.name} provider={p.name} />
+                                ))}
+                            </div>
+                            {e.allSuccess ? (
                                 <CircleCheck className="size-4 shrink-0 text-success" />
                             ) : (
                                 <CircleX className="size-4 shrink-0 text-destructive" />

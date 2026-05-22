@@ -71,7 +71,6 @@ namespace Shoko.AniSync.Api
             switch (_provider)
             {
                 case ApiName.Mal:
-                    // Generate a unique PKCE code challenge per authorization request
                     var codeChallenge = GenerateCodeChallenge();
                     var cacheKey = $"pkce_{state ?? "default"}";
                     _memoryCache.Set(cacheKey, codeChallenge, TimeSpan.FromMinutes(10));
@@ -83,7 +82,6 @@ namespace Shoko.AniSync.Api
                     }
                     return url;
                 case ApiName.AniList:
-                    // Confidential client (has secret) > standard auth-code grant, no PKCE.
                     var aniUrl = $"{_authApiUrl}/authorize?client_id={_providerApiAuth.ClientId}&redirect_uri={Uri.EscapeDataString(_redirectUrl)}&response_type=code";
                     if (!string.IsNullOrEmpty(state))
                     {
@@ -121,7 +119,6 @@ namespace Shoko.AniSync.Api
                     };
                 if (_provider == ApiName.Mal)
                 {
-                    // Retrieve the per-session PKCE code verifier from cache
                     var cacheKey = $"pkce_{state ?? "default"}";
                     var codeVerifier = _memoryCache.Get<string>(cacheKey);
                     if (string.IsNullOrEmpty(codeVerifier))
@@ -130,7 +127,7 @@ namespace Shoko.AniSync.Api
                         throw new System.Security.Authentication.AuthenticationException("OAuth session expired. Please try authenticating again.");
                     }
                     content.Add(new KeyValuePair<string, string>("code_verifier", codeVerifier));
-                    _memoryCache.Remove(cacheKey); // Single use
+                    _memoryCache.Remove(cacheKey);
                 }
                 _logger.LogInformation("Requesting {Provider} token from {Url}", _provider, $"{_authApiUrl}/token");
                 formUrlEncodedContent = new FormUrlEncodedContent(content.ToArray());
@@ -167,7 +164,6 @@ namespace Shoko.AniSync.Api
 
                     if (refreshToken != null)
                     {
-                        // Token refresh: preserve existing username from config
                         var existingAuth = pluginConfig.GetAuthForShokoUser(shokoUsername, _provider);
                         if (!string.IsNullOrEmpty(existingAuth?.Username))
                         {
@@ -176,7 +172,6 @@ namespace Shoko.AniSync.Api
                     }
                     else if (!string.IsNullOrEmpty(shokoUsername))
                     {
-                        // Initial auth: save the token first so the provider API can use it, then fetch the username.
                         newUserApiAuth.ShokoUsername = shokoUsername;
                         SaveProviderAuth(shokoUsername, newUserApiAuth);
                         try
@@ -199,12 +194,9 @@ namespace Shoko.AniSync.Api
                         }
                     }
 
-                    // Always try to get a Shoko username - either provided or error
                     var userToLink = shokoUsername;
                     if (string.IsNullOrEmpty(userToLink))
                     {
-                        // No user specified - this should not happen in production
-                        // as authentication should provide the current user
                         _logger.LogError("No Shoko user specified during authentication");
                         throw new InvalidOperationException("Cannot authenticate without a Shoko user context");
                     }
@@ -220,8 +212,6 @@ namespace Shoko.AniSync.Api
             throw new AuthenticationException($"Could not retrieve {_provider} token: " + response.StatusCode + " - " + response.ReasonPhrase);
         }
 
-        // Atomic merge-on-write: reload inside the gate and apply only this provider's auth,
-        // so a concurrent write to the other provider isn't clobbered.
         private void SaveProviderAuth(string shokoUsername, UserApiAuth auth)
         {
             lock (ConfigGate.Lock)
