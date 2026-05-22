@@ -36,3 +36,5 @@ TestResults/
 InspectTypes.csx
 InspectTypes/
 SHOKO_API.json
+# Local build/deploy script (contains infra paths)
+build.sh
