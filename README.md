@@ -31,9 +31,11 @@ manage everything.
 | --- | --- | --- |
 | ![Dashboard](docs/screenshots/dashboard.png) | ![Settings](docs/screenshots/settings.png) | ![History](docs/screenshots/history.png) |
 
-Responsive on mobile:
+And on mobile:
 
-<p align="center"><img src="docs/screenshots/history-mobile.png" width="260" alt="History on mobile" /></p>
+| Dashboard | Settings | History |
+| --- | --- | --- |
+| ![Dashboard mobile](docs/screenshots/dashboard-mobile.png) | ![Settings mobile](docs/screenshots/settings-mobile.png) | ![History mobile](docs/screenshots/history-mobile.png) |
 
 ## Requirements
 
