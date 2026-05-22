@@ -9,7 +9,7 @@ using Shoko.AniSync.Configuration;
 using Shoko.AniSync.Interfaces;
 using Shoko.AniSync.Models.ViewModels;
 using Shoko.AniSync.Models.Mal;
-using Shoko.MAL.Models;
+using Shoko.AniSync.Models;
 using Shoko.Abstractions.Plugin;
 using Shoko.Abstractions.User.Services;
 using System;

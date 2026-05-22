@@ -279,7 +279,9 @@ const ApiConfigForm = () => {
     };
     const current: GlobalSettings = creds ?? base;
     const set = (patch: Partial<GlobalSettings>) => setCreds({ ...current, ...patch });
-    const dirty = (Object.keys(base) as (keyof GlobalSettings)[]).some((k) => current[k] !== base[k]);
+    const dirty = (Object.keys(base) as (keyof GlobalSettings)[]).some(
+        (k) => current[k] !== base[k]
+    );
 
     const fields: { key: keyof GlobalSettings; label: string; secret?: boolean }[] = [
         { key: "aniListClientId", label: "AniList Client ID" },

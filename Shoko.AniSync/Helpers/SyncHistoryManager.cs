@@ -8,7 +8,6 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Shoko.AniSync.Models;
 using Shoko.AniSync.Models.Mal;
-using Shoko.MAL.Models;
 
 namespace Shoko.AniSync.Helpers
 {

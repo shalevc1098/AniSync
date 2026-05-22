@@ -99,11 +99,13 @@ const HistoryPage = () => {
                     <Table>
                         <TableHeader>
                             <TableRow>
-                                <TableHead className="w-12"></TableHead>
+                                <TableHead className="w-24"></TableHead>
                                 <TableHead>Anime</TableHead>
-                                <TableHead>Action</TableHead>
-                                <TableHead>Provider</TableHead>
-                                <TableHead className="text-right">When</TableHead>
+                                <TableHead className="hidden md:table-cell">Action</TableHead>
+                                <TableHead className="hidden sm:table-cell">Provider(s)</TableHead>
+                                <TableHead className="hidden text-right sm:table-cell">
+                                    When
+                                </TableHead>
                                 <TableHead className="w-16 text-right">Result</TableHead>
                             </TableRow>
                         </TableHeader>
@@ -146,19 +148,33 @@ const HistoryPage = () => {
                                                         (ep {e.episode_number})
                                                     </span>
                                                 )}
+                                                <div className="mt-1 flex flex-wrap items-center gap-1.5 sm:hidden">
+                                                    {e.providers.map((p) => (
+                                                        <ProviderBadge
+                                                            key={p.name}
+                                                            provider={p.name}
+                                                        />
+                                                    ))}
+                                                    <span className="text-xs font-normal text-muted-foreground">
+                                                        {e.action} {formatRelative(e.timestamp)}
+                                                    </span>
+                                                </div>
                                             </TableCell>
-                                            <TableCell className="text-muted-foreground">
+                                            <TableCell className="hidden text-muted-foreground md:table-cell">
                                                 {e.action}
                                             </TableCell>
-                                            <TableCell>
+                                            <TableCell className="hidden sm:table-cell">
                                                 <div className="flex flex-wrap gap-1">
                                                     {e.providers.map((p) => (
-                                                        <ProviderBadge key={p.name} provider={p.name} />
+                                                        <ProviderBadge
+                                                            key={p.name}
+                                                            provider={p.name}
+                                                        />
                                                     ))}
                                                 </div>
                                             </TableCell>
                                             <TableCell
-                                                className="whitespace-nowrap text-right text-muted-foreground"
+                                                className="hidden whitespace-nowrap text-right text-muted-foreground sm:table-cell"
                                                 title={new Date(e.timestamp).toLocaleString()}
                                             >
                                                 {formatRelative(e.timestamp)}

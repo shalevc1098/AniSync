@@ -9,7 +9,6 @@ using Moq;
 using Shoko.AniSync.Helpers;
 using Shoko.AniSync.Models;
 using Shoko.AniSync.Models.Mal;
-using Shoko.MAL.Models;
 using Xunit;
 
 namespace Shoko.Tests

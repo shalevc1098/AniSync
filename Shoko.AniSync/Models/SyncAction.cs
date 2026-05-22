@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using Shoko.AniSync.Models.Mal;
 
-namespace Shoko.MAL.Models
+namespace Shoko.AniSync.Models
 {
     /// <summary>
     /// Represents the action taken during a sync operation

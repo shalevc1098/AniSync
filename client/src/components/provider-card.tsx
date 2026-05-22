@@ -41,67 +41,73 @@ export const ProviderCard = ({
 
     return (
         <Card className="overflow-hidden">
-            <CardContent className="flex items-center gap-4">
-                <img
-                    src={logo}
-                    alt={label}
-                    className="size-12 shrink-0 rounded-xl"
-                    style={{ opacity: status.connected ? 1 : 0.55 }}
-                />
+            <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+                <div className="flex min-w-0 flex-1 items-center gap-4">
+                    <img
+                        src={logo}
+                        alt={label}
+                        className="size-12 shrink-0 rounded-xl"
+                        style={{ opacity: status.connected ? 1 : 0.55 }}
+                    />
 
-                <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                        <span className="font-semibold">{label}</span>
-                        <Badge variant={status.connected ? "default" : "secondary"}>
-                            {status.connected ? "Connected" : "Not connected"}
-                        </Badge>
+                    <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-semibold">{label}</span>
+                            <Badge variant={status.connected ? "default" : "secondary"}>
+                                {status.connected ? "Connected" : "Not connected"}
+                            </Badge>
+                        </div>
+                        <p className="truncate text-sm text-muted-foreground">
+                            {status.connected
+                                ? status.username
+                                : status.configured
+                                  ? "Ready to connect"
+                                  : "Not configured"}
+                        </p>
                     </div>
-                    <p className="truncate text-sm text-muted-foreground">
-                        {status.connected
-                            ? status.username
-                            : status.configured
-                              ? "Ready to connect"
-                              : "Not configured"}
-                    </p>
                 </div>
 
-                {status.connected ? (
-                    <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                            <Button variant="outline" size="sm">
-                                <Unlink className="size-4" />
-                                Disconnect
-                            </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                            <AlertDialogHeader>
-                                <AlertDialogTitle>Disconnect {label}?</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                    This removes the stored token. You can reconnect at any time.
-                                </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction
-                                    onClick={() =>
-                                        disconnect.mutate(PROVIDER_API[providerKey], {
-                                            onSuccess: () => toast.success(`Disconnected ${label}`)
-                                        })
-                                    }
-                                >
+                <div className="shrink-0">
+                    {status.connected ? (
+                        <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                                <Button variant="outline" size="sm">
+                                    <Unlink className="size-4" />
                                     Disconnect
-                                </AlertDialogAction>
-                            </AlertDialogFooter>
-                        </AlertDialogContent>
-                    </AlertDialog>
-                ) : (
-                    status.configured && (
-                        <Button size="sm" onClick={connect}>
-                            <Link2 className="size-4" />
-                            Connect
-                        </Button>
-                    )
-                )}
+                                </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                                <AlertDialogHeader>
+                                    <AlertDialogTitle>Disconnect {label}?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                        This removes the stored token. You can reconnect at any
+                                        time.
+                                    </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction
+                                        onClick={() =>
+                                            disconnect.mutate(PROVIDER_API[providerKey], {
+                                                onSuccess: () =>
+                                                    toast.success(`Disconnected ${label}`)
+                                            })
+                                        }
+                                    >
+                                        Disconnect
+                                    </AlertDialogAction>
+                                </AlertDialogFooter>
+                            </AlertDialogContent>
+                        </AlertDialog>
+                    ) : (
+                        status.configured && (
+                            <Button size="sm" onClick={connect}>
+                                <Link2 className="size-4" />
+                                Connect
+                            </Button>
+                        )
+                    )}
+                </div>
             </CardContent>
         </Card>
     );

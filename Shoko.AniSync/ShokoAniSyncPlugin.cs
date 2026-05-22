@@ -15,7 +15,7 @@ using Microsoft.Extensions.Caching.Memory;
 using Shoko.AniSync.Interfaces;
 using Shoko.AniSync.Helpers;
 using Shoko.AniSync.Models.Mal;
-using Shoko.MAL.Models;
+using Shoko.AniSync.Models;
 using System.Globalization;
 using System.Linq;
 using Shoko.AniSync.Configuration;
