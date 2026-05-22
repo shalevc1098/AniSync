@@ -67,47 +67,47 @@ export const ProviderCard = ({
                     </div>
                 </div>
 
-                <div className="shrink-0">
-                    {status.connected ? (
-                        <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                                <Button variant="outline" size="sm">
-                                    <Unlink className="size-4" />
-                                    Disconnect
-                                </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                                <AlertDialogHeader>
-                                    <AlertDialogTitle>Disconnect {label}?</AlertDialogTitle>
-                                    <AlertDialogDescription>
-                                        This removes the stored token. You can reconnect at any
-                                        time.
-                                    </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                    <AlertDialogAction
-                                        onClick={() =>
-                                            disconnect.mutate(PROVIDER_API[providerKey], {
-                                                onSuccess: () =>
-                                                    toast.success(`Disconnected ${label}`)
-                                            })
-                                        }
-                                    >
+                {(status.connected || status.configured) && (
+                    <div className="shrink-0">
+                        {status.connected ? (
+                            <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                    <Button variant="outline" size="sm">
+                                        <Unlink className="size-4" />
                                         Disconnect
-                                    </AlertDialogAction>
-                                </AlertDialogFooter>
-                            </AlertDialogContent>
-                        </AlertDialog>
-                    ) : (
-                        status.configured && (
+                                    </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                        <AlertDialogTitle>Disconnect {label}?</AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                            This removes the stored token. You can reconnect at any
+                                            time.
+                                        </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                        <AlertDialogAction
+                                            onClick={() =>
+                                                disconnect.mutate(PROVIDER_API[providerKey], {
+                                                    onSuccess: () =>
+                                                        toast.success(`Disconnected ${label}`)
+                                                })
+                                            }
+                                        >
+                                            Disconnect
+                                        </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                </AlertDialogContent>
+                            </AlertDialog>
+                        ) : (
                             <Button size="sm" onClick={connect}>
                                 <Link2 className="size-4" />
                                 Connect
                             </Button>
-                        )
-                    )}
-                </div>
+                        )}
+                    </div>
+                )}
             </CardContent>
         </Card>
     );
