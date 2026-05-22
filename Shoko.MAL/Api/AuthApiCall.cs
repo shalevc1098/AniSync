@@ -179,7 +179,7 @@ namespace Shoko.AniSync.Api
                                 UserApiAuth newAuth;
                                 try
                                 {
-                                    newAuth = new ApiAuthentication(provider, _httpClientFactory, _loggerFactory, _configProvider, _applicationPaths, _memoryCache).GetToken(refreshToken: auth.RefreshToken, shokoUsername: auth.ShokoUsername);
+                                    newAuth = await new ApiAuthentication(provider, _httpClientFactory, _loggerFactory, _configProvider, _applicationPaths, _memoryCache).GetToken(refreshToken: auth.RefreshToken, shokoUsername: auth.ShokoUsername);
                                 }
                                 catch (Exception e)
                                 {

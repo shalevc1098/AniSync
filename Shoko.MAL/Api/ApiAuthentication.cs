@@ -93,7 +93,7 @@ namespace Shoko.AniSync.Api
             }
         }
 
-        public UserApiAuth GetToken(string? code = null, string? refreshToken = null, string? shokoUsername = null, string? state = null)
+        public async Task<UserApiAuth> GetToken(string? code = null, string? refreshToken = null, string? shokoUsername = null, string? state = null)
         {
             var client = _httpClientFactory.CreateClient();
 
@@ -133,15 +133,12 @@ namespace Shoko.AniSync.Api
                 formUrlEncodedContent = new FormUrlEncodedContent(content.ToArray());
             }
 
-            using var response = client.PostAsync(new Uri($"{_authApiUrl}/token"), formUrlEncodedContent).Result;
+            using var response = await client.PostAsync(new Uri($"{_authApiUrl}/token"), formUrlEncodedContent);
 
             if (response.IsSuccessStatusCode)
             {
-                var content = response.Content.ReadAsStream();
-
-                using var streamReader = new StreamReader(content);
-
-                TokenResponse? tokenResponse = JsonSerializer.Deserialize<TokenResponse>(streamReader.ReadToEnd());
+                var json = await response.Content.ReadAsStringAsync();
+                TokenResponse? tokenResponse = JsonSerializer.Deserialize<TokenResponse>(json);
 
                 var pluginConfig = _configProvider.Load();
                 if (tokenResponse != null)
@@ -178,8 +175,8 @@ namespace Shoko.AniSync.Api
                         {
                             string? name = _provider switch
                             {
-                                ApiName.Mal => new MalApiCalls(_httpClientFactory, _loggerFactory, _memoryCache, new Delayer(), _configProvider, _applicationPaths).GetUserInformation(shokoUsername).Result?.Name,
-                                ApiName.AniList => new AniListApiCalls(_httpClientFactory, _loggerFactory, _memoryCache, new Delayer(), _configProvider, _applicationPaths).GetUserInformation(shokoUsername).Result?.Name,
+                                ApiName.Mal => (await new MalApiCalls(_httpClientFactory, _loggerFactory, _memoryCache, new Delayer(), _configProvider, _applicationPaths).GetUserInformation(shokoUsername))?.Name,
+                                ApiName.AniList => (await new AniListApiCalls(_httpClientFactory, _loggerFactory, _memoryCache, new Delayer(), _configProvider, _applicationPaths).GetUserInformation(shokoUsername))?.Name,
                                 _ => null
                             };
                             if (!string.IsNullOrEmpty(name))
@@ -222,7 +219,7 @@ namespace Shoko.AniSync.Api
             }
         }
 
-        public Task RefreshAccessToken(string shokoUsername)
+        public async Task RefreshAccessToken(string shokoUsername)
         {
             var config = _configProvider.Load();
             var auth = config.GetAuthForShokoUser(shokoUsername, _provider);
@@ -231,8 +228,7 @@ namespace Shoko.AniSync.Api
                 throw new InvalidOperationException("No refresh token available for user " + shokoUsername);
             }
 
-            GetToken(refreshToken: auth.RefreshToken, shokoUsername: shokoUsername);
-            return Task.CompletedTask;
+            await GetToken(refreshToken: auth.RefreshToken, shokoUsername: shokoUsername);
         }
 
         private static string GenerateCodeChallenge()

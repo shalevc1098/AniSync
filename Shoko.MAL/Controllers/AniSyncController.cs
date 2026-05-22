@@ -163,7 +163,7 @@ namespace Shoko.AniSync.Controllers
 
         [HttpGet]
         [Route("authCallback")]
-        public IActionResult MalCallback(string code, string? state = null)
+        public async Task<IActionResult> MalCallback(string code, string? state = null)
         {
             try
             {
@@ -175,7 +175,7 @@ namespace Shoko.AniSync.Controllers
 
                 var effectiveBaseUrl = string.IsNullOrEmpty(callbackBaseUrl) ? ShokoApiBaseUrl : callbackBaseUrl;
                 _logger.LogInformation("Authenticating {Provider} for Shoko user: {ShokoUsername} with baseUrl: {BaseUrl}", provider, shokoUsername, effectiveBaseUrl);
-                new ApiAuthentication(provider, _httpClientFactory, _loggerFactory, _configProvider, _applicationPaths, _memoryCache, effectiveBaseUrl).GetToken(code, shokoUsername: shokoUsername, state: state);
+                await new ApiAuthentication(provider, _httpClientFactory, _loggerFactory, _configProvider, _applicationPaths, _memoryCache, effectiveBaseUrl).GetToken(code, shokoUsername: shokoUsername, state: state);
 
                 return Redirect("/anisync?success=connected");
             }
