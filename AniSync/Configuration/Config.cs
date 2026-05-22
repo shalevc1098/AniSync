@@ -174,7 +174,7 @@ namespace AniSync.Configuration
         public bool GetEnableRewatchDetection(string? shokoUsername)
         {
             var userConfig = GetUserConfig(shokoUsername);
-            return userConfig?.Settings?.EnableRewatchDetection ?? true;
+            return userConfig?.Settings?.EnableRewatchDetection ?? false;
         }
 
         public bool GetAllowRollback(string? shokoUsername)

@@ -244,7 +244,7 @@ public class ConfigTests
     {
         _config.GetEnableAutoSync("unknown_user").Should().BeTrue("default is true");
         _config.GetSyncOnlyCompleted("unknown_user").Should().BeTrue("default is true");
-        _config.GetEnableRewatchDetection("unknown_user").Should().BeTrue("default is true");
+        _config.GetEnableRewatchDetection("unknown_user").Should().BeFalse("default is false");
         _config.GetAllowRollback("unknown_user").Should().BeFalse("default is false");
         _config.GetTitleMatchThreshold("unknown_user").Should().Be(0.8, "default is 0.8");
         _config.GetSyncDelaySeconds("unknown_user").Should().Be(5, "default is 5");

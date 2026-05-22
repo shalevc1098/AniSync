@@ -70,7 +70,7 @@ namespace AniSync.Configuration
                 EnableAutoSync = true,
                 SyncOnlyCompleted = true,
                 SetStartDateFromAnyEpisode = false,
-                EnableRewatchDetection = true,
+                EnableRewatchDetection = false,
                 AllowRollback = false,
                 TitleMatchThreshold = 0.8,
                 UseFuzzyMatching = true,

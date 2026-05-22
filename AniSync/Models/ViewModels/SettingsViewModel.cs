@@ -10,7 +10,7 @@ namespace AniSync.Models.ViewModels
         public bool EnableAutoSync { get; set; } = true;
         public bool SyncOnlyCompleted { get; set; } = true;
         public bool SetStartDateFromAnyEpisode { get; set; } = false;
-        public bool EnableRewatchDetection { get; set; } = true;
+        public bool EnableRewatchDetection { get; set; } = false;
         public bool AllowRollback { get; set; } = false;
         
         // Title matching
