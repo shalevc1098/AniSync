@@ -43,6 +43,12 @@ export const UserSettingsSchema = z.object({
     settings: SettingsSchema
 });
 
+export const WhoamiSchema = z.object({
+    Username: z.string(),
+    Avatar: z.string().nullable().optional(),
+    IsAdmin: z.boolean().optional()
+});
+
 export const GlobalSettingsSchema = z.object({
     malClientId: z.string(),
     malClientSecret: z.string(),
@@ -82,5 +88,6 @@ export type Dashboard = z.infer<typeof DashboardSchema>;
 export type Settings = z.infer<typeof SettingsSchema>;
 export type UserSettings = z.infer<typeof UserSettingsSchema>;
 export type GlobalSettings = z.infer<typeof GlobalSettingsSchema>;
+export type Whoami = z.infer<typeof WhoamiSchema>;
 export type HistoryEntry = z.infer<typeof HistoryEntrySchema>;
 export type History = z.infer<typeof HistorySchema>;

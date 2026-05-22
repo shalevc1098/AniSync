@@ -127,10 +127,10 @@ const HistoryPage = () => {
                                                         src={src}
                                                         alt=""
                                                         loading="lazy"
-                                                        className="h-12 w-9 rounded object-cover"
+                                                        className="aspect-video w-20 rounded object-cover"
                                                     />
                                                 ) : (
-                                                    <div className="h-12 w-9 rounded bg-muted" />
+                                                    <div className="aspect-video w-20 rounded bg-muted" />
                                                 )}
                                             </TableCell>
                                             <TableCell className="font-medium">

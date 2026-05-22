@@ -59,10 +59,10 @@ const RecentActivity = () => {
                                     src={src}
                                     alt=""
                                     loading="lazy"
-                                    className="h-12 w-9 shrink-0 rounded object-cover"
+                                    className="aspect-video w-20 shrink-0 rounded object-cover"
                                 />
                             ) : (
-                                <div className="h-12 w-9 shrink-0 rounded bg-muted" />
+                                <div className="aspect-video w-20 shrink-0 rounded bg-muted" />
                             )}
                             <div className="min-w-0 flex-1">
                                 <p className="truncate text-sm font-medium">

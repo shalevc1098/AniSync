@@ -2,8 +2,9 @@ import { useEffect } from "react";
 import { NavLink, Route, Routes, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { LayoutDashboard, Settings2, History as HistoryIcon } from "lucide-react";
+import { LayoutDashboard, Settings2, History as HistoryIcon, User } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useWhoami } from "@/api/queries";
 import { Logo } from "@/components/logo";
 import { ModeToggle } from "@/components/mode-toggle";
 import DashboardPage from "@/pages/DashboardPage";
@@ -19,6 +20,7 @@ const navItems = [
 const App = () => {
     const [params, setParams] = useSearchParams();
     const queryClient = useQueryClient();
+    const { data: me } = useWhoami();
 
     // The OAuth callback redirects back to /anisync?success=connected or ?error=...
     const success = params.get("success");
@@ -46,7 +48,30 @@ const App = () => {
                             <span className="text-foreground">Sync</span>
                         </span>
                     </div>
-                    <ModeToggle />
+                    <div className="flex items-center gap-3">
+                        {me && (
+                            <div
+                                className="flex items-center gap-2"
+                                title={`Shoko user: ${me.Username}`}
+                            >
+                                {me.Avatar ? (
+                                    <img
+                                        src={me.Avatar}
+                                        alt=""
+                                        className="size-7 rounded-full object-cover"
+                                    />
+                                ) : (
+                                    <div className="flex size-7 items-center justify-center rounded-full bg-muted">
+                                        <User className="size-4 text-muted-foreground" />
+                                    </div>
+                                )}
+                                <span className="hidden text-sm font-medium sm:inline">
+                                    {me.Username}
+                                </span>
+                            </div>
+                        )}
+                        <ModeToggle />
+                    </div>
                 </div>
                 <nav className="flex gap-1 px-6 lg:px-10">
                     {navItems.map(({ to, label, icon: Icon, end }) => (

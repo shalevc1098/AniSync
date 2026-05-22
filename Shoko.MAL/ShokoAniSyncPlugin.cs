@@ -56,15 +56,21 @@ namespace Shoko.AniSync
         /// </summary>
         private string? GetEpisodeThumbnailUrl(IShokoEpisode? episode, Anime? anime)
         {
-            var image = episode?.Series?.GetPreferredImageForType(ImageEntityType.Primary);
-            if (image != null)
-                // The v3 image endpoint (/api/v3/Image/{source}/{type}/{id}) keys on the legacy
-                // integer id, so LocalID is required here despite being marked obsolete.
-#pragma warning disable CS0618
-                return $"/api/v3/Image/{image.Source}/{image.Type}/{image.LocalID}";
-#pragma warning restore CS0618
+            // The episode still (TMDB screenshot) is exposed as a Backdrop on the episode;
+            // fall back to the series poster. Always a Shoko-served image, so both providers
+            // get the same picture (GetImages handles the case where none is marked preferred).
+            var image = episode?.GetPreferredImageForType(ImageEntityType.Backdrop)
+                ?? episode?.GetImages(imageType: ImageEntityType.Backdrop)?.FirstOrDefault()
+                ?? episode?.Series?.GetPreferredImageForType(ImageEntityType.Primary)
+                ?? episode?.Series?.GetImages(imageType: ImageEntityType.Primary)?.FirstOrDefault();
+            if (image == null)
+                return null;
 
-            return anime?.MainPicture?.Medium ?? anime?.MainPicture?.Large;
+            // The v3 image endpoint (/api/v3/Image/{source}/{type}/{id}) keys on the legacy
+            // integer id, so LocalID is required here despite being marked obsolete.
+#pragma warning disable CS0618
+            return $"/api/v3/Image/{image.Source}/{image.Type}/{image.LocalID}";
+#pragma warning restore CS0618
         }
 
         private static DateTime? GetSeriesAirDate(ISeries? series)

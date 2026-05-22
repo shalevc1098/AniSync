@@ -6,9 +6,17 @@ import {
     GlobalSettingsSchema,
     HistorySchema,
     UserSettingsSchema,
+    WhoamiSchema,
     type GlobalSettings,
     type Settings
 } from "@/lib/schemas";
+
+export const useWhoami = () =>
+    useQuery({
+        queryKey: ["whoami"],
+        queryFn: async () => WhoamiSchema.parse((await api.get("/api/v3/User/Current")).data),
+        staleTime: Infinity
+    });
 
 export const useDashboard = () =>
     useQuery({

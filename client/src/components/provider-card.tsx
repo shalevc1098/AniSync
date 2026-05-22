@@ -1,8 +1,10 @@
 import { Link2, Unlink } from "lucide-react";
 import { toast } from "sonner";
 import { buildAuthorizeUrl, useDisconnect } from "@/api/queries";
-import { PROVIDER_API, PROVIDER_LABELS, PROVIDER_SHORT, providerColor } from "@/lib/format";
+import { PROVIDER_API, PROVIDER_LABELS } from "@/lib/format";
 import type { ProviderStatus } from "@/lib/schemas";
+import aniListLogo from "@/assets/anilist.png";
+import malLogo from "@/assets/mal.svg";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -27,7 +29,7 @@ export const ProviderCard = ({
 }) => {
     const disconnect = useDisconnect();
     const label = PROVIDER_LABELS[providerKey];
-    const color = providerColor(providerKey);
+    const logo = providerKey === "mal" ? malLogo : aniListLogo;
 
     const connect = async () => {
         try {
@@ -40,12 +42,12 @@ export const ProviderCard = ({
     return (
         <Card className="overflow-hidden">
             <CardContent className="flex items-center gap-4">
-                <div
-                    className="flex size-12 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white"
-                    style={{ backgroundColor: color, opacity: status.connected ? 1 : 0.55 }}
-                >
-                    {PROVIDER_SHORT[providerKey] ?? label.slice(0, 2)}
-                </div>
+                <img
+                    src={logo}
+                    alt={label}
+                    className="size-12 shrink-0 rounded-xl"
+                    style={{ opacity: status.connected ? 1 : 0.55 }}
+                />
 
                 <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
