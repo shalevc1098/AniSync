@@ -34,7 +34,7 @@ namespace Shoko.AniSync.Api
         public async Task<MalApiCalls.User?> GetUserInformation(string? shokoUsername = null)
         {
             const string query = "query { Viewer { id name avatar { large } } }";
-            var doc = await PostGraphQl(query, null, shokoUsername);
+            using var doc = await PostGraphQl(query, null, shokoUsername);
             if (doc == null) return null;
             if (!doc.RootElement.TryGetProperty("data", out var data) || !data.TryGetProperty("Viewer", out var viewer) || viewer.ValueKind != JsonValueKind.Object)
                 return null;
@@ -52,7 +52,7 @@ namespace Shoko.AniSync.Api
             if (string.IsNullOrWhiteSpace(query)) return result;
 
             const string gql = "query ($q: String) { Page(perPage: 10) { media(search: $q, type: ANIME) { id episodes title { romaji english } startDate { year month day } } } }";
-            var doc = await PostGraphQl(gql, new Dictionary<string, object?> { ["q"] = query }, shokoUsername);
+            using var doc = await PostGraphQl(gql, new Dictionary<string, object?> { ["q"] = query }, shokoUsername);
             if (doc == null) return result;
             if (!doc.RootElement.TryGetProperty("data", out var data) || !data.TryGetProperty("Page", out var page) || !page.TryGetProperty("media", out var media) || media.ValueKind != JsonValueKind.Array)
                 return result;
@@ -73,7 +73,7 @@ namespace Shoko.AniSync.Api
         public async Task<Anime?> GetAnime(int animeId, string[]? fields = null, string? shokoUsername = null)
         {
             const string gql = "query ($id: Int) { Media(id: $id, type: ANIME) { id episodes title { romaji english } startDate { year month day } mediaListEntry { status progress repeat startedAt { year month day } completedAt { year month day } } } }";
-            var doc = await PostGraphQl(gql, new Dictionary<string, object?> { ["id"] = animeId }, shokoUsername);
+            using var doc = await PostGraphQl(gql, new Dictionary<string, object?> { ["id"] = animeId }, shokoUsername);
             if (doc == null) return null;
             if (!doc.RootElement.TryGetProperty("data", out var data) || !data.TryGetProperty("Media", out var m) || m.ValueKind != JsonValueKind.Object)
                 return null;
@@ -126,7 +126,7 @@ namespace Shoko.AniSync.Api
                 variables["completedAt"] = ToFuzzyDateInput(endDate.Value);
 
             const string gql = "mutation ($mediaId: Int, $progress: Int, $status: MediaListStatus, $repeat: Int, $startedAt: FuzzyDateInput, $completedAt: FuzzyDateInput) { SaveMediaListEntry(mediaId: $mediaId, progress: $progress, status: $status, repeat: $repeat, startedAt: $startedAt, completedAt: $completedAt) { id status progress repeat } }";
-            var doc = await PostGraphQl(gql, variables, shokoUsername);
+            using var doc = await PostGraphQl(gql, variables, shokoUsername);
             if (doc == null) return null;
             if (!doc.RootElement.TryGetProperty("data", out var data) || !data.TryGetProperty("SaveMediaListEntry", out var entry) || entry.ValueKind != JsonValueKind.Object)
                 return null;

@@ -19,8 +19,8 @@ createRoot(document.getElementById("root")!).render(
             <QueryClientProvider client={queryClient}>
                 <BrowserRouter basename="/anisync">
                     <App />
+                    <Toaster richColors position="bottom-right" />
                 </BrowserRouter>
-                <Toaster richColors position="bottom-right" />
             </QueryClientProvider>
         </ThemeProvider>
     </StrictMode>

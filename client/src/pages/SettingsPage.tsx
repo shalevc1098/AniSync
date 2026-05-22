@@ -105,6 +105,7 @@ const SettingsForm = ({ initial }: { initial: Settings }) => {
         validators: { onChange: SettingsSchema },
         onSubmit: async ({ value }) => {
             await save.mutateAsync(value);
+            form.reset(value); // clear dirty state so "Unsaved changes" goes away
             toast.success("Settings saved");
         }
     });
@@ -217,11 +218,19 @@ const SettingsForm = ({ initial }: { initial: Settings }) => {
 };
 
 const ApiConfigForm = () => {
-    const { data, isLoading } = useGlobalSettings(true);
+    const { data, isLoading, isError } = useGlobalSettings(true);
     const save = useSaveGlobalSettings();
     const [creds, setCreds] = useState<GlobalSettings | null>(null);
 
     if (isLoading) return <Skeleton className="h-48 w-full" />;
+
+    if (isError) {
+        return (
+            <Alert variant="destructive">
+                <AlertDescription>Couldn't load API credentials.</AlertDescription>
+            </Alert>
+        );
+    }
 
     const current: GlobalSettings = creds ??
         data ?? {
@@ -259,12 +268,14 @@ const ApiConfigForm = () => {
                 disabled={save.isPending}
                 onClick={() =>
                     save.mutate(current, {
-                        onSuccess: (r) =>
+                        onSuccess: (r) => {
+                            setCreds(null); // fall back to refetched server values
                             toast.success(
                                 r.reAuthRequired
                                     ? "Saved. Changed credentials cleared connections, please reconnect."
                                     : "API credentials saved"
-                            ),
+                            );
+                        },
                         onError: () => toast.error("Failed to save credentials")
                     })
                 }

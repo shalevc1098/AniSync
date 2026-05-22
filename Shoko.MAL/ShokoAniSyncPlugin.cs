@@ -171,12 +171,15 @@ namespace Shoko.AniSync
             DateTime? seriesAirDate = GetSeriesAirDate(episode.Series);
             var candidates = (uniqueAnimes ?? new List<Anime>())
                             .Where(a => a != null && TitleCheck(a, episode))
-                            .Select(a => new {
-                                Anime = a,
-                                MalDate = ParseFullDate(a.StartDate ?? ""),
-                                DiffDays = seriesAirDate.HasValue && ParseFullDate(a.StartDate ?? "").HasValue
-                                    ? Math.Abs((ParseFullDate(a.StartDate ?? "")!.Value - seriesAirDate.Value).TotalDays)
-                                    : double.MaxValue
+                            .Select(a => {
+                                var malDate = ParseFullDate(a.StartDate ?? "");
+                                return new {
+                                    Anime = a,
+                                    MalDate = malDate,
+                                    DiffDays = seriesAirDate.HasValue && malDate.HasValue
+                                        ? Math.Abs((malDate.Value - seriesAirDate.Value).TotalDays)
+                                        : double.MaxValue
+                                };
                             })
                             .Where(x => x.DiffDays < 30)
                             .OrderBy(x => x.DiffDays)
@@ -286,7 +289,9 @@ namespace Shoko.AniSync
                         maxEpisode.Series?.Title ?? "Unknown", shokoEpisodeNumber);
                     return;
                 }
-                _memoryCache.Set(dedupeKey, true, TimeSpan.FromSeconds(60));
+                // Short window: long enough to absorb Shoko's burst of identical events for one
+                // action (~15s apart observed), short enough not to block a genuine later re-action.
+                _memoryCache.Set(dedupeKey, true, TimeSpan.FromSeconds(30));
 
                 // Sync to every connected provider; one failing doesn't abort the rest.
                 var providers = config.GetConnectedProviders(shokoUser.Username!);

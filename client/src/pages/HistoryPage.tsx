@@ -2,6 +2,7 @@ import { Fragment, useMemo, useState } from "react";
 import { CircleCheck, CircleX, Inbox } from "lucide-react";
 import { useHistory } from "@/api/queries";
 import { useAuthStore } from "@/store/auth";
+import { useNow } from "@/hooks/use-now";
 import { formatRelative } from "@/lib/format";
 import { ProviderBadge } from "@/components/provider-badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -38,6 +39,7 @@ const HistoryPage = () => {
     const { data, isLoading, isError } = useHistory(limit);
     const apiKey = useAuthStore((s) => s.apiKey);
     const [filter, setFilter] = useState("all");
+    useNow();
 
     const thumb = (path: string | null) =>
         path
@@ -107,7 +109,7 @@ const HistoryPage = () => {
                                 const showHeader =
                                     i === 0 || label !== dateLabel(rows[i - 1].timestamp);
                                 return (
-                                    <Fragment key={i}>
+                                    <Fragment key={`${e.timestamp}-${e.anime_id}-${i}`}>
                                         {showHeader && (
                                             <TableRow className="hover:bg-transparent">
                                                 <TableCell

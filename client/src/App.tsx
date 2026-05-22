@@ -21,17 +21,19 @@ const App = () => {
     const queryClient = useQueryClient();
 
     // The OAuth callback redirects back to /anisync?success=connected or ?error=...
+    const success = params.get("success");
+    const error = params.get("error");
     useEffect(() => {
-        if (params.get("success") === "connected") {
+        if (success === "connected") {
             toast.success("Provider connected");
             queryClient.invalidateQueries({ queryKey: ["dashboard"] });
             queryClient.invalidateQueries({ queryKey: ["userSettings"] });
             setParams({}, { replace: true });
-        } else if (params.get("error")) {
-            toast.error(decodeURIComponent(params.get("error") ?? "Failed to connect"));
+        } else if (error) {
+            toast.error(decodeURIComponent(error));
             setParams({}, { replace: true });
         }
-    }, [params, queryClient, setParams]);
+    }, [success, error, queryClient, setParams]);
 
     return (
         <div className="min-h-svh bg-background">

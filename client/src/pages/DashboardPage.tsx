@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useDashboard, useHistory } from "@/api/queries";
 import { useAuthStore } from "@/store/auth";
+import { useNow } from "@/hooks/use-now";
 import type { ProviderStatus } from "@/lib/schemas";
 import { formatLastSync, formatRelative } from "@/lib/format";
 import { ProviderCard } from "@/components/provider-card";
@@ -21,8 +22,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const RecentActivity = () => {
-    const { data, isLoading } = useHistory(6);
+    const { data, isLoading, isError } = useHistory(6);
     const apiKey = useAuthStore((s) => s.apiKey);
+    useNow();
     const thumb = (path: string | null) =>
         path
             ? `${path}${path.includes("?") ? "&" : "?"}apikey=${encodeURIComponent(apiKey)}`
@@ -35,7 +37,12 @@ const RecentActivity = () => {
             </CardHeader>
             <CardContent className="space-y-1">
                 {isLoading && <Skeleton className="h-40 w-full" />}
-                {!isLoading && (!data || data.history.length === 0) && (
+                {!isLoading && isError && (
+                    <p className="py-8 text-center text-sm text-destructive">
+                        Couldn't load recent activity.
+                    </p>
+                )}
+                {!isLoading && !isError && (!data || data.history.length === 0) && (
                     <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
                         <Inbox className="size-7" />
                         <p className="text-sm">No sync activity yet.</p>
@@ -45,7 +52,7 @@ const RecentActivity = () => {
                     const src = thumb(e.anime_image);
                     return (
                         <div
-                            key={i}
+                            key={`${e.timestamp}-${e.anime_id}-${i}`}
                             className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-muted/50"
                         >
                             {src ? (
@@ -92,6 +99,7 @@ const RecentActivity = () => {
 
 const DashboardPage = () => {
     const { data, isLoading, isError } = useDashboard();
+    useNow();
 
     if (isLoading) {
         return (

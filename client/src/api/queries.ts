@@ -1,4 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { api } from "@/lib/api";
 import {
     DashboardSchema,
@@ -25,7 +26,8 @@ export const useHistory = (limit?: number) =>
     useQuery({
         queryKey: ["history", limit ?? null],
         queryFn: async () =>
-            HistorySchema.parse((await api.get("/api/history", { params: { limit } })).data)
+            HistorySchema.parse((await api.get("/api/history", { params: { limit } })).data),
+        placeholderData: keepPreviousData
     });
 
 export const useGlobalSettings = (enabled: boolean) =>
@@ -53,7 +55,8 @@ export const useSaveSettings = () => {
                 EnableDebugLogging: settings.enableDebugLogging
             });
         },
-        onSuccess: () => qc.invalidateQueries({ queryKey: ["userSettings"] })
+        onSuccess: () => qc.invalidateQueries({ queryKey: ["userSettings"] }),
+        onError: () => toast.error("Failed to save settings")
     });
 };
 
@@ -86,7 +89,8 @@ export const useDisconnect = () => {
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ["dashboard"] });
             qc.invalidateQueries({ queryKey: ["userSettings"] });
-        }
+        },
+        onError: () => toast.error("Failed to disconnect")
     });
 };
 

@@ -161,7 +161,7 @@ namespace Shoko.AniSync.Controllers
             if (string.IsNullOrEmpty(baseUrl)) return false;
             if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri)) return false;
             if (uri.Scheme != "http" && uri.Scheme != "https") return false;
-            return uri.Host == requestHost || uri.Host == "localhost" || uri.Host == "127.0.0.1";
+            return uri.Host == requestHost;
         }
 
         [HttpGet]
@@ -255,25 +255,26 @@ namespace Shoko.AniSync.Controllers
                 return Unauthorized(new { error = "Authentication required" });
             }
 
-            var config = _configProvider.Load();
-
             _logger.LogInformation("Saving settings for user: {Username}", shokoUsername);
-            _logger.LogInformation("Settings model: UpdateNsfw={UpdateNsfw}, EnableAutoSync={EnableAutoSync}", model.UpdateNsfw, model.EnableAutoSync);
 
-            config.SetUserSettings(shokoUsername, new UserSettings
+            lock (ConfigGate.Lock)
             {
-                UpdateNsfw = model.UpdateNsfw,
-                EnableAutoSync = model.EnableAutoSync,
-                SyncOnlyCompleted = model.SyncOnlyCompleted,
-                SetStartDateFromAnyEpisode = model.SetStartDateFromAnyEpisode,
-                EnableRewatchDetection = model.EnableRewatchDetection,
-                AllowRollback = model.AllowRollback,
-                TitleMatchThreshold = model.TitleMatchThreshold,
-                UseFuzzyMatching = model.UseFuzzyMatching,
-                SyncDelaySeconds = model.SyncDelaySeconds,
-                EnableDebugLogging = model.EnableDebugLogging
-            });
-            _configProvider.Save(config);
+                var config = _configProvider.Load();
+                config.SetUserSettings(shokoUsername, new UserSettings
+                {
+                    UpdateNsfw = model.UpdateNsfw,
+                    EnableAutoSync = model.EnableAutoSync,
+                    SyncOnlyCompleted = model.SyncOnlyCompleted,
+                    SetStartDateFromAnyEpisode = model.SetStartDateFromAnyEpisode,
+                    EnableRewatchDetection = model.EnableRewatchDetection,
+                    AllowRollback = model.AllowRollback,
+                    TitleMatchThreshold = model.TitleMatchThreshold,
+                    UseFuzzyMatching = model.UseFuzzyMatching,
+                    SyncDelaySeconds = model.SyncDelaySeconds,
+                    EnableDebugLogging = model.EnableDebugLogging
+                });
+                _configProvider.Save(config);
+            }
 
             _logger.LogInformation("Settings saved successfully for user: {Username}", shokoUsername);
 
@@ -291,12 +292,15 @@ namespace Shoko.AniSync.Controllers
             if (!Helpers.ProviderApiFactory.TryParseProvider(provider, out var providerEnum))
                 return BadRequest(new { error = "Invalid provider" });
 
-            var config = _configProvider.Load();
-            if (config?.Users.TryGetValue(currentUser, out var userConfig) == true
-                && userConfig?.Providers?.Remove(providerEnum.ToString()) == true)
+            lock (ConfigGate.Lock)
             {
-                _configProvider.Save(config);
-                _logger.LogInformation("Disconnected {Provider} for Shoko user {User}", providerEnum, currentUser);
+                var config = _configProvider.Load();
+                if (config?.Users.TryGetValue(currentUser, out var userConfig) == true
+                    && userConfig?.Providers?.Remove(providerEnum.ToString()) == true)
+                {
+                    _configProvider.Save(config);
+                    _logger.LogInformation("Disconnected {Provider} for Shoko user {User}", providerEnum, currentUser);
+                }
             }
             return Json(new { success = true });
         }
@@ -327,13 +331,16 @@ namespace Shoko.AniSync.Controllers
         
         private byte[] GetStateSigningKey()
         {
-            var config = _configProvider.Load();
-            if (string.IsNullOrEmpty(config.StateSigningKey))
+            lock (ConfigGate.Lock)
             {
-                config.StateSigningKey = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
-                _configProvider.Save(config);
+                var config = _configProvider.Load();
+                if (string.IsNullOrEmpty(config.StateSigningKey))
+                {
+                    config.StateSigningKey = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
+                    _configProvider.Save(config);
+                }
+                return Convert.FromBase64String(config.StateSigningKey);
             }
-            return Convert.FromBase64String(config.StateSigningKey);
         }
 
         /// <summary>True if the resolved caller is a Shoko admin. Used to gate global settings.</summary>
@@ -424,6 +431,12 @@ namespace Shoko.AniSync.Controllers
                 return Unauthorized(new { error = "Authentication required" });
             }
 
+            // Client secrets are sensitive - only admins may read them.
+            if (!IsCurrentUserAdmin())
+            {
+                return StatusCode(403, new { error = "Only an administrator can view API credentials" });
+            }
+
             var config = _configProvider.Load();
             return Json(new
             {
@@ -453,36 +466,39 @@ namespace Shoko.AniSync.Controllers
             if (request == null)
                 return BadRequest(new { error = "Invalid request body" });
 
-            var config = _configProvider.Load();
-
             var malSecret = request.MalClientSecret;
             var aniSecret = request.AniListClientSecret;
-
-            bool malChanged = (!string.IsNullOrEmpty(config.MalClientId) || !string.IsNullOrEmpty(config.MalClientSecret)) &&
-                (config.MalClientId != request.MalClientId || config.MalClientSecret != malSecret);
-            bool aniChanged = (!string.IsNullOrEmpty(config.AniListClientId) || !string.IsNullOrEmpty(config.AniListClientSecret)) &&
-                (config.AniListClientId != request.AniListClientId || config.AniListClientSecret != aniSecret);
-
-            config.MalClientId = request.MalClientId;
-            config.MalClientSecret = malSecret;
-            config.AniListClientId = request.AniListClientId;
-            config.AniListClientSecret = aniSecret;
-
             bool reAuthRequired = false;
-            var toClear = new List<string>();
-            if (malChanged) toClear.Add("Mal");
-            if (aniChanged) toClear.Add("AniList");
-            foreach (var kvp in config.Users)
-            {
-                foreach (var name in toClear)
-                {
-                    if (kvp.Value?.Providers?.Remove(name) == true) reAuthRequired = true;
-                }
-            }
 
-            _configProvider.Save(config);
-            if (reAuthRequired)
-                _logger.LogInformation("Cleared auth for providers [{Providers}] due to credential change", string.Join(", ", toClear));
+            lock (ConfigGate.Lock)
+            {
+                var config = _configProvider.Load();
+
+                bool malChanged = (!string.IsNullOrEmpty(config.MalClientId) || !string.IsNullOrEmpty(config.MalClientSecret)) &&
+                    (config.MalClientId != request.MalClientId || config.MalClientSecret != malSecret);
+                bool aniChanged = (!string.IsNullOrEmpty(config.AniListClientId) || !string.IsNullOrEmpty(config.AniListClientSecret)) &&
+                    (config.AniListClientId != request.AniListClientId || config.AniListClientSecret != aniSecret);
+
+                config.MalClientId = request.MalClientId;
+                config.MalClientSecret = malSecret;
+                config.AniListClientId = request.AniListClientId;
+                config.AniListClientSecret = aniSecret;
+
+                var toClear = new List<string>();
+                if (malChanged) toClear.Add("Mal");
+                if (aniChanged) toClear.Add("AniList");
+                foreach (var kvp in config.Users)
+                {
+                    foreach (var name in toClear)
+                    {
+                        if (kvp.Value?.Providers?.Remove(name) == true) reAuthRequired = true;
+                    }
+                }
+
+                _configProvider.Save(config);
+                if (reAuthRequired)
+                    _logger.LogInformation("Cleared auth for providers [{Providers}] due to credential change", string.Join(", ", toClear));
+            }
 
             return Json(new { success = true, reAuthRequired });
         }

@@ -132,9 +132,7 @@ namespace Shoko.AniSync.Api
                     content.Add(new KeyValuePair<string, string>("code_verifier", codeVerifier));
                     _memoryCache.Remove(cacheKey); // Single use
                 }
-                var dict = content.ToDictionary(k => k.Key, v => v.Value);
-                _logger.LogInformation("Requesting token from {Url} with form fields: {@Fields}",
-                                       $"{_authApiUrl}/token", dict);
+                _logger.LogInformation("Requesting {Provider} token from {Url}", _provider, $"{_authApiUrl}/token");
                 formUrlEncodedContent = new FormUrlEncodedContent(content.ToArray());
             }
 
@@ -180,8 +178,7 @@ namespace Shoko.AniSync.Api
                     {
                         // Initial auth: save the token first so the provider API can use it, then fetch the username.
                         newUserApiAuth.ShokoUsername = shokoUsername;
-                        pluginConfig.SetAuthForShokoUser(shokoUsername, _provider, newUserApiAuth);
-                        _configProvider.Save(pluginConfig);
+                        SaveProviderAuth(shokoUsername, newUserApiAuth);
                         try
                         {
                             string? name = _provider switch
@@ -213,8 +210,7 @@ namespace Shoko.AniSync.Api
                     }
 
                     newUserApiAuth.ShokoUsername = userToLink;
-                    pluginConfig.SetAuthForShokoUser(userToLink, _provider, newUserApiAuth);
-                    _configProvider.Save(pluginConfig);
+                    SaveProviderAuth(userToLink, newUserApiAuth);
                     _logger.LogInformation("Linked {Provider} account {User} to Shoko user {ShokoUser}",
                         _provider, newUserApiAuth.Username, userToLink);
                     return newUserApiAuth;
@@ -222,6 +218,18 @@ namespace Shoko.AniSync.Api
             }
 
             throw new AuthenticationException($"Could not retrieve {_provider} token: " + response.StatusCode + " - " + response.ReasonPhrase);
+        }
+
+        // Atomic merge-on-write: reload inside the gate and apply only this provider's auth,
+        // so a concurrent write to the other provider isn't clobbered.
+        private void SaveProviderAuth(string shokoUsername, UserApiAuth auth)
+        {
+            lock (ConfigGate.Lock)
+            {
+                var config = _configProvider.Load();
+                config.SetAuthForShokoUser(shokoUsername, _provider, auth);
+                _configProvider.Save(config);
+            }
         }
 
         public Task RefreshAccessToken(string shokoUsername)
