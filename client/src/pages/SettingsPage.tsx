@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useForm, type AnyFieldApi } from "@tanstack/react-form";
 import { toast } from "sonner";
 import {
@@ -103,9 +103,11 @@ const NumberInput = ({
     ...props
 }: { field: AnyFieldApi } & React.ComponentProps<typeof Input>) => {
     const [text, setText] = useState(String(field.state.value ?? ""));
-    useEffect(() => {
+    const [lastValue, setLastValue] = useState(field.state.value);
+    if (field.state.value !== lastValue) {
+        setLastValue(field.state.value);
         setText(String(field.state.value ?? ""));
-    }, [field.state.value]);
+    }
 
     return (
         <Input
