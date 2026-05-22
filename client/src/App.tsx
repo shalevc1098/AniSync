@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { LayoutDashboard, Settings2, History as HistoryIcon, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWhoami } from "@/api/queries";
-import { Logo } from "@/components/logo";
+import { Brand } from "@/components/brand";
 import { ModeToggle } from "@/components/mode-toggle";
 import DashboardPage from "@/pages/DashboardPage";
 import SettingsPage from "@/pages/SettingsPage";
@@ -40,13 +40,7 @@ const App = () => {
         <div className="min-h-svh bg-background">
             <header className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur">
                 <div className="flex h-14 items-center justify-between px-6 lg:px-10">
-                    <div className="flex items-center">
-                        <Logo className="size-7" />
-                        <span className="text-lg font-semibold tracking-tight">
-                            <span className="text-[#0EA5E9]">Ani</span>
-                            <span className="text-foreground">Sync</span>
-                        </span>
-                    </div>
+                    <Brand className="h-8 w-auto text-foreground" />
                     <div className="flex items-center gap-3">
                         {me && (
                             <div
