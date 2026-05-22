@@ -1,8 +1,9 @@
 <div align="center">
 
-<img src="docs/logo.png" width="116" alt="AniSync logo" />
-
-# AniSync
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/banner-dark.png" />
+  <img src="docs/banner-light.png" width="440" alt="AniSync" />
+</picture>
 
 **Sync your Shoko watch status to AniList _and_ MyAnimeList - automatically, to both at once.**
 
