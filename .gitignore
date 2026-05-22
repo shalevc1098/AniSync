@@ -41,3 +41,7 @@ build.sh
 
 # Brand asset sources (kept local)
 anisync-logos/
+
+# Local MCP tooling config
+.mcp.json
+.playwright-mcp/
