@@ -13,9 +13,9 @@ import { useAuthStore } from "@/store/auth";
 import type { ProviderStatus } from "@/lib/schemas";
 import { formatLastSync, formatRelative } from "@/lib/format";
 import { ProviderCard } from "@/components/provider-card";
+import { ProviderBadge } from "@/components/provider-badge";
 import { StatCard } from "@/components/stat-card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -71,12 +71,12 @@ const RecentActivity = () => {
                                 </p>
                             </div>
                             {e.provider?.name && (
-                                <Badge variant="outline" className="shrink-0">
-                                    {e.provider.name}
-                                </Badge>
+                                <span className="shrink-0">
+                                    <ProviderBadge provider={e.provider.name} />
+                                </span>
                             )}
                             {e.success ? (
-                                <CircleCheck className="size-4 shrink-0 text-muted-foreground" />
+                                <CircleCheck className="size-4 shrink-0 text-success" />
                             ) : (
                                 <CircleX className="size-4 shrink-0 text-destructive" />
                             )}

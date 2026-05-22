@@ -1,7 +1,7 @@
 import { CircleCheck, CircleSlash, Link2, Unlink } from "lucide-react";
 import { toast } from "sonner";
 import { buildAuthorizeUrl, useDisconnect } from "@/api/queries";
-import { PROVIDER_API, PROVIDER_LABELS } from "@/lib/format";
+import { PROVIDER_API, PROVIDER_LABELS, providerColor } from "@/lib/format";
 import type { ProviderStatus } from "@/lib/schemas";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,7 @@ export const ProviderCard = ({
 }) => {
     const disconnect = useDisconnect();
     const label = PROVIDER_LABELS[providerKey];
+    const color = providerColor(providerKey);
 
     const connect = async () => {
         try {
@@ -39,11 +40,17 @@ export const ProviderCard = ({
     return (
         <Card className="overflow-hidden">
             <CardContent className="flex items-center gap-4">
-                <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-muted">
+                <div
+                    className="flex size-12 shrink-0 items-center justify-center rounded-xl"
+                    style={{
+                        backgroundColor: `color-mix(in oklch, ${color} 15%, transparent)`,
+                        color
+                    }}
+                >
                     {status.connected ? (
-                        <CircleCheck className="size-6 text-foreground" />
+                        <CircleCheck className="size-6" />
                     ) : (
-                        <CircleSlash className="size-6 text-muted-foreground" />
+                        <CircleSlash className="size-6 opacity-60" />
                     )}
                 </div>
 

@@ -3,8 +3,8 @@ import { CircleCheck, CircleX } from "lucide-react";
 import { useHistory } from "@/api/queries";
 import { useAuthStore } from "@/store/auth";
 import { formatRelative } from "@/lib/format";
+import { ProviderBadge } from "@/components/provider-badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -111,7 +111,7 @@ const HistoryPage = () => {
                                         </TableCell>
                                         <TableCell>
                                             {e.provider?.name && (
-                                                <Badge variant="outline">{e.provider.name}</Badge>
+                                                <ProviderBadge provider={e.provider.name} />
                                             )}
                                         </TableCell>
                                         <TableCell
@@ -122,7 +122,7 @@ const HistoryPage = () => {
                                         </TableCell>
                                         <TableCell className="text-right">
                                             {e.success ? (
-                                                <CircleCheck className="ml-auto size-4 text-muted-foreground" />
+                                                <CircleCheck className="ml-auto size-4 text-success" />
                                             ) : (
                                                 <CircleX className="ml-auto size-4 text-destructive" />
                                             )}
