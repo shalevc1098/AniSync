@@ -1,42 +1,104 @@
 import { Link } from "react-router-dom";
-import { CheckCircle2, AlertTriangle } from "lucide-react";
-import { toast } from "sonner";
-import { useDashboard, buildAuthorizeUrl } from "@/api/queries";
+import {
+    AlertTriangle,
+    CircleCheck,
+    CircleX,
+    Clock,
+    Library,
+    ListChecks,
+    RefreshCw
+} from "lucide-react";
+import { useDashboard, useHistory } from "@/api/queries";
+import { useAuthStore } from "@/store/auth";
 import type { ProviderStatus } from "@/lib/schemas";
-import { formatLastSync, PROVIDER_API, PROVIDER_LABELS } from "@/lib/format";
+import { formatLastSync, formatRelative } from "@/lib/format";
+import { ProviderCard } from "@/components/provider-card";
+import { StatCard } from "@/components/stat-card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
-const connect = async (providerKey: string) => {
-    try {
-        const url = await buildAuthorizeUrl(PROVIDER_API[providerKey]);
-        window.location.href = url;
-    } catch {
-        toast.error(`Failed to start ${PROVIDER_LABELS[providerKey]} connection`);
-    }
-};
+const RecentActivity = () => {
+    const { data, isLoading } = useHistory(6);
+    const apiKey = useAuthStore((s) => s.apiKey);
+    const thumb = (path: string | null) =>
+        path
+            ? `${path}${path.includes("?") ? "&" : "?"}apikey=${encodeURIComponent(apiKey)}`
+            : null;
 
-const Stat = ({ label, value }: { label: string; value: string | number }) => (
-    <Card>
-        <CardContent>
-            <div className="text-3xl font-bold text-primary">{value}</div>
-            <div className="mt-1 text-sm uppercase tracking-wide text-muted-foreground">
-                {label}
-            </div>
-        </CardContent>
-    </Card>
-);
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle className="text-base">Recent activity</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-1">
+                {isLoading && <Skeleton className="h-40 w-full" />}
+                {!isLoading && (!data || data.history.length === 0) && (
+                    <p className="py-6 text-center text-sm text-muted-foreground">
+                        No sync activity yet.
+                    </p>
+                )}
+                {data?.history.map((e, i) => {
+                    const src = thumb(e.anime_image);
+                    return (
+                        <div
+                            key={i}
+                            className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-muted/50"
+                        >
+                            {src ? (
+                                <img
+                                    src={src}
+                                    alt=""
+                                    loading="lazy"
+                                    className="h-12 w-9 shrink-0 rounded object-cover"
+                                />
+                            ) : (
+                                <div className="h-12 w-9 shrink-0 rounded bg-muted" />
+                            )}
+                            <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-medium">
+                                    {e.anime_title ?? "Unknown"}
+                                    {e.episode_number != null && (
+                                        <span className="font-normal text-muted-foreground">
+                                            {" "}
+                                            (ep {e.episode_number})
+                                        </span>
+                                    )}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                    {e.action} {formatRelative(e.timestamp)}
+                                </p>
+                            </div>
+                            {e.provider?.name && (
+                                <Badge variant="outline" className="shrink-0">
+                                    {e.provider.name}
+                                </Badge>
+                            )}
+                            {e.success ? (
+                                <CircleCheck className="size-4 shrink-0 text-muted-foreground" />
+                            ) : (
+                                <CircleX className="size-4 shrink-0 text-destructive" />
+                            )}
+                        </div>
+                    );
+                })}
+            </CardContent>
+        </Card>
+    );
+};
 
 const DashboardPage = () => {
     const { data, isLoading, isError } = useDashboard();
 
     if (isLoading) {
         return (
-            <div className="space-y-4">
-                <Skeleton className="h-14 w-full" />
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <div className="space-y-6">
+                <div className="grid gap-4 sm:grid-cols-2">
+                    <Skeleton className="h-20 w-full" />
+                    <Skeleton className="h-20 w-full" />
+                </div>
+                <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
                     {Array.from({ length: 4 }).map((_, i) => (
                         <Skeleton key={i} className="h-24 w-full" />
                     ))}
@@ -58,66 +120,49 @@ const DashboardPage = () => {
 
     const entries = Object.entries(data.providers) as [string, ProviderStatus][];
     const anyConfigured = entries.some(([, p]) => p.configured);
-    const connectable = entries.filter(([, p]) => !p.connected && p.configured);
 
     return (
-        <div className="space-y-6">
-            {data.isAuthenticated ? (
-                <div className="space-y-3">
-                    {entries
-                        .filter(([, p]) => p.connected)
-                        .map(([key, p]) => (
-                            <Alert key={key}>
-                                <CheckCircle2 className="text-green-500" />
-                                <AlertDescription>
-                                    Connected to {PROVIDER_LABELS[key]} as{" "}
-                                    <strong className="text-foreground">{p.username}</strong>
-                                </AlertDescription>
-                            </Alert>
-                        ))}
-                </div>
-            ) : (
-                <Alert variant="destructive">
-                    <AlertTriangle />
-                    <AlertDescription>
-                        No provider connected yet. Connect AniList and/or MyAnimeList to start
-                        syncing.
-                    </AlertDescription>
-                </Alert>
-            )}
-
-            {(connectable.length > 0 || !anyConfigured) && (
-                <div className="flex flex-wrap gap-2">
-                    {connectable.map(([key]) => (
-                        <Button key={key} variant="secondary" onClick={() => connect(key)}>
-                            Connect {PROVIDER_LABELS[key]}
-                        </Button>
+        <div className="space-y-8">
+            <section className="space-y-3">
+                <div className="grid gap-4 sm:grid-cols-2">
+                    {entries.map(([key, status]) => (
+                        <ProviderCard key={key} providerKey={key} status={status} />
                     ))}
-                    {!anyConfigured && (
-                        <p className="text-sm text-muted-foreground">
-                            {data.isAdmin ? (
-                                <>
-                                    Add provider API credentials in{" "}
-                                    <Link to="/settings" className="text-primary underline">
-                                        Settings
-                                    </Link>{" "}
-                                    to enable connecting.
-                                </>
-                            ) : (
-                                "Ask an administrator to configure API credentials."
-                            )}
-                        </p>
-                    )}
                 </div>
-            )}
+                {!anyConfigured && (
+                    <p className="text-sm text-muted-foreground">
+                        {data.isAdmin ? (
+                            <>
+                                Add provider API credentials in{" "}
+                                <Link to="/settings" className="font-medium underline">
+                                    Settings
+                                </Link>{" "}
+                                to enable connecting.
+                            </>
+                        ) : (
+                            "Ask an administrator to configure API credentials."
+                        )}
+                    </p>
+                )}
+            </section>
 
             {data.isAuthenticated && (
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                    <Stat label="Total Anime" value={data.totalAnime} />
-                    <Stat label="Synced" value={data.syncedAnime} />
-                    <Stat label="Last Sync" value={formatLastSync(data.lastSync)} />
-                    <Stat label="Pending Updates" value={data.pendingUpdates} />
-                </div>
+                <>
+                    <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+                        <StatCard label="Total Anime" value={data.totalAnime} icon={Library} />
+                        <StatCard label="Synced" value={data.syncedAnime} icon={ListChecks} />
+                        <StatCard
+                            label="Last Sync"
+                            value={formatLastSync(data.lastSync)}
+                            icon={Clock}
+                        />
+                        <StatCard label="Pending" value={data.pendingUpdates} icon={RefreshCw} />
+                    </section>
+
+                    <section>
+                        <RecentActivity />
+                    </section>
+                </>
             )}
         </div>
     );

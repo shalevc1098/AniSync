@@ -1,5 +1,5 @@
 import { NavLink, Route, Routes } from "react-router-dom";
-import { LayoutDashboard, Settings2, History as HistoryIcon } from "lucide-react";
+import { LayoutDashboard, Settings2, History as HistoryIcon, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ModeToggle } from "@/components/mode-toggle";
 import DashboardPage from "@/pages/DashboardPage";
@@ -13,13 +13,18 @@ const navItems = [
 ];
 
 const App = () => (
-    <div className="w-full px-6 py-8 lg:px-10">
-        <header className="mb-8">
-            <div className="mb-4 flex items-center justify-between">
-                <h1 className="text-2xl font-bold tracking-tight">AniSync</h1>
+    <div className="min-h-svh bg-background">
+        <header className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur">
+            <div className="flex h-14 items-center justify-between px-6 lg:px-10">
+                <div className="flex items-center gap-2">
+                    <div className="flex size-8 items-center justify-center rounded-lg bg-foreground text-background">
+                        <RefreshCw className="size-4" />
+                    </div>
+                    <span className="text-lg font-semibold tracking-tight">AniSync</span>
+                </div>
                 <ModeToggle />
             </div>
-            <nav className="flex gap-1 border-b">
+            <nav className="flex gap-1 px-6 lg:px-10">
                 {navItems.map(({ to, label, icon: Icon, end }) => (
                     <NavLink
                         key={to}
@@ -27,9 +32,9 @@ const App = () => (
                         end={end}
                         className={({ isActive }) =>
                             cn(
-                                "flex items-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors",
+                                "-mb-px flex items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors",
                                 isActive
-                                    ? "border-primary text-foreground"
+                                    ? "border-foreground text-foreground"
                                     : "border-transparent text-muted-foreground hover:text-foreground"
                             )
                         }
@@ -41,7 +46,7 @@ const App = () => (
             </nav>
         </header>
 
-        <main>
+        <main className="px-6 py-8 lg:px-10">
             <Routes>
                 <Route path="/" element={<DashboardPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
