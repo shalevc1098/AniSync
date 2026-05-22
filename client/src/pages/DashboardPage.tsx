@@ -4,6 +4,7 @@ import {
     CircleCheck,
     CircleX,
     Clock,
+    Inbox,
     Library,
     ListChecks,
     RefreshCw
@@ -35,9 +36,10 @@ const RecentActivity = () => {
             <CardContent className="space-y-1">
                 {isLoading && <Skeleton className="h-40 w-full" />}
                 {!isLoading && (!data || data.history.length === 0) && (
-                    <p className="py-6 text-center text-sm text-muted-foreground">
-                        No sync activity yet.
-                    </p>
+                    <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
+                        <Inbox className="size-7" />
+                        <p className="text-sm">No sync activity yet.</p>
+                    </div>
                 )}
                 {data?.history.map((e, i) => {
                     const src = thumb(e.anime_image);
@@ -103,6 +105,7 @@ const DashboardPage = () => {
                         <Skeleton key={i} className="h-24 w-full" />
                     ))}
                 </div>
+                <Skeleton className="h-64 w-full" />
             </div>
         );
     }

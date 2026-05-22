@@ -40,6 +40,11 @@ export const PROVIDER_LABELS: Record<string, string> = {
     mal: "MyAnimeList"
 };
 
+export const PROVIDER_SHORT: Record<string, string> = {
+    aniList: "AL",
+    mal: "MAL"
+};
+
 export const PROVIDER_API: Record<string, string> = {
     aniList: "AniList",
     mal: "Mal"

@@ -15,12 +15,13 @@
     </ItemGroup>
     
     <ItemGroup>
-        <!-- Embed the built SPA; LogicalName keeps a stable "app/<path>" lookup key. -->
+        <!-- Embed the built SPA; LogicalName keeps a stable "app/<path>" lookup key.
+             Build the client first (./build.sh or `npm run build` in client/). -->
         <EmbeddedResource Include="wwwroot\app\**\*">
             <LogicalName>app/%(RecursiveDir)%(Filename)%(Extension)</LogicalName>
         </EmbeddedResource>
     </ItemGroup>
-    
+
 
     <Target Name="PostBuild" AfterTargets="PostBuildEvent" Condition="Exists('$(ProgramData)\ShokoServer\plugins') OR Exists('$(ProgramData)/ShokoServer/plugins')">
         <PropertyGroup>

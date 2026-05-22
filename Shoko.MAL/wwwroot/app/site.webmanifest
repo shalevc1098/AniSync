@@ -1,0 +1,19 @@
+{
+    "name": "AniSync",
+    "short_name": "AniSync",
+    "description": "Sync your anime watch progress from Shoko to AniList and MyAnimeList.",
+    "start_url": "/anisync/",
+    "scope": "/anisync/",
+    "display": "standalone",
+    "background_color": "#0F1B2D",
+    "theme_color": "#0F1B2D",
+    "icons": [
+        { "src": "/anisync/icon-192.png", "sizes": "192x192", "type": "image/png" },
+        {
+            "src": "/anisync/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ]
+}

@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
-import { CircleCheck, CircleX } from "lucide-react";
+import { Fragment, useMemo, useState } from "react";
+import { CircleCheck, CircleX, Inbox } from "lucide-react";
 import { useHistory } from "@/api/queries";
 import { useAuthStore } from "@/store/auth";
 import { formatRelative } from "@/lib/format";
 import { ProviderBadge } from "@/components/provider-badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -17,8 +18,24 @@ import {
     TableRow
 } from "@/components/ui/table";
 
+const PAGE = 100;
+
+const dateLabel = (iso: string) => {
+    const d = new Date(iso);
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const that = new Date(d);
+    that.setHours(0, 0, 0, 0);
+    const diff = Math.round((start.getTime() - that.getTime()) / 86_400_000);
+    if (diff <= 0) return "Today";
+    if (diff === 1) return "Yesterday";
+    if (diff < 7) return d.toLocaleDateString(undefined, { weekday: "long" });
+    return d.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+};
+
 const HistoryPage = () => {
-    const { data, isLoading, isError } = useHistory(200);
+    const [limit, setLimit] = useState(PAGE);
+    const { data, isLoading, isError } = useHistory(limit);
     const apiKey = useAuthStore((s) => s.apiKey);
     const [filter, setFilter] = useState("all");
 
@@ -44,6 +61,8 @@ const HistoryPage = () => {
         );
     }
 
+    const canLoadMore = data.history.length >= limit;
+
     return (
         <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-4">
@@ -65,9 +84,10 @@ const HistoryPage = () => {
             </CardHeader>
             <CardContent>
                 {rows.length === 0 ? (
-                    <p className="py-10 text-center text-sm text-muted-foreground">
-                        Nothing to show here.
-                    </p>
+                    <div className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
+                        <Inbox className="size-8" />
+                        <p className="text-sm">Nothing to show here.</p>
+                    </div>
                 ) : (
                     <Table>
                         <TableHeader>
@@ -76,62 +96,85 @@ const HistoryPage = () => {
                                 <TableHead>Anime</TableHead>
                                 <TableHead>Action</TableHead>
                                 <TableHead>Provider</TableHead>
-                                <TableHead>When</TableHead>
+                                <TableHead className="text-right">When</TableHead>
                                 <TableHead className="w-16 text-right">Result</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {rows.map((e, i) => {
                                 const src = thumb(e.anime_image);
+                                const label = dateLabel(e.timestamp);
+                                const showHeader =
+                                    i === 0 || label !== dateLabel(rows[i - 1].timestamp);
                                 return (
-                                    <TableRow key={i}>
-                                        <TableCell>
-                                            {src ? (
-                                                <img
-                                                    src={src}
-                                                    alt=""
-                                                    loading="lazy"
-                                                    className="h-12 w-9 rounded object-cover"
-                                                />
-                                            ) : (
-                                                <div className="h-12 w-9 rounded bg-muted" />
-                                            )}
-                                        </TableCell>
-                                        <TableCell className="font-medium">
-                                            {e.anime_title ?? "Unknown"}
-                                            {e.episode_number != null && (
-                                                <span className="font-normal text-muted-foreground">
-                                                    {" "}
-                                                    (ep {e.episode_number})
-                                                </span>
-                                            )}
-                                        </TableCell>
-                                        <TableCell className="text-muted-foreground">
-                                            {e.action}
-                                        </TableCell>
-                                        <TableCell>
-                                            {e.provider?.name && (
-                                                <ProviderBadge provider={e.provider.name} />
-                                            )}
-                                        </TableCell>
-                                        <TableCell
-                                            className="whitespace-nowrap text-muted-foreground"
-                                            title={new Date(e.timestamp).toLocaleString()}
-                                        >
-                                            {formatRelative(e.timestamp)}
-                                        </TableCell>
-                                        <TableCell className="text-right">
-                                            {e.success ? (
-                                                <CircleCheck className="ml-auto size-4 text-success" />
-                                            ) : (
-                                                <CircleX className="ml-auto size-4 text-destructive" />
-                                            )}
-                                        </TableCell>
-                                    </TableRow>
+                                    <Fragment key={i}>
+                                        {showHeader && (
+                                            <TableRow className="hover:bg-transparent">
+                                                <TableCell
+                                                    colSpan={6}
+                                                    className="bg-muted/40 py-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground"
+                                                >
+                                                    {label}
+                                                </TableCell>
+                                            </TableRow>
+                                        )}
+                                        <TableRow>
+                                            <TableCell>
+                                                {src ? (
+                                                    <img
+                                                        src={src}
+                                                        alt=""
+                                                        loading="lazy"
+                                                        className="h-12 w-9 rounded object-cover"
+                                                    />
+                                                ) : (
+                                                    <div className="h-12 w-9 rounded bg-muted" />
+                                                )}
+                                            </TableCell>
+                                            <TableCell className="font-medium">
+                                                {e.anime_title ?? "Unknown"}
+                                                {e.episode_number != null && (
+                                                    <span className="font-normal text-muted-foreground">
+                                                        {" "}
+                                                        (ep {e.episode_number})
+                                                    </span>
+                                                )}
+                                            </TableCell>
+                                            <TableCell className="text-muted-foreground">
+                                                {e.action}
+                                            </TableCell>
+                                            <TableCell>
+                                                {e.provider?.name && (
+                                                    <ProviderBadge provider={e.provider.name} />
+                                                )}
+                                            </TableCell>
+                                            <TableCell
+                                                className="whitespace-nowrap text-right text-muted-foreground"
+                                                title={new Date(e.timestamp).toLocaleString()}
+                                            >
+                                                {formatRelative(e.timestamp)}
+                                            </TableCell>
+                                            <TableCell className="text-right">
+                                                {e.success ? (
+                                                    <CircleCheck className="ml-auto size-4 text-success" />
+                                                ) : (
+                                                    <CircleX className="ml-auto size-4 text-destructive" />
+                                                )}
+                                            </TableCell>
+                                        </TableRow>
+                                    </Fragment>
                                 );
                             })}
                         </TableBody>
                     </Table>
+                )}
+
+                {canLoadMore && (
+                    <div className="mt-4 flex justify-center">
+                        <Button variant="outline" onClick={() => setLimit((l) => l + PAGE)}>
+                            Load more
+                        </Button>
+                    </div>
                 )}
             </CardContent>
         </Card>
