@@ -96,75 +96,45 @@ const HistoryPage = () => {
                         <p className="text-sm">Nothing to show here.</p>
                     </div>
                 ) : (
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead className="w-24"></TableHead>
-                                <TableHead>Anime</TableHead>
-                                <TableHead className="hidden md:table-cell">Action</TableHead>
-                                <TableHead className="hidden sm:table-cell">Provider(s)</TableHead>
-                                <TableHead className="hidden text-right sm:table-cell">
-                                    When
-                                </TableHead>
-                                <TableHead className="w-16 text-right">Result</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
+                    <>
+                        <div className="sm:hidden">
                             {rows.map((e, i) => {
                                 const src = thumb(e.anime_image);
                                 const label = dateLabel(e.timestamp);
                                 const showHeader =
                                     i === 0 || label !== dateLabel(rows[i - 1].timestamp);
                                 return (
-                                    <Fragment key={`${e.timestamp}-${e.anime_title}-${i}`}>
+                                    <Fragment key={`m-${e.timestamp}-${e.anime_title}-${i}`}>
                                         {showHeader && (
-                                            <TableRow className="hover:bg-transparent">
-                                                <TableCell
-                                                    colSpan={6}
-                                                    className="bg-muted/40 py-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground"
-                                                >
-                                                    {label}
-                                                </TableCell>
-                                            </TableRow>
+                                            <div className="bg-muted/40 px-1 py-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                                                {label}
+                                            </div>
                                         )}
-                                        <TableRow>
-                                            <TableCell>
-                                                {src ? (
-                                                    <img
-                                                        src={src}
-                                                        alt=""
-                                                        loading="lazy"
-                                                        className="aspect-video w-20 rounded object-cover"
-                                                    />
-                                                ) : (
-                                                    <div className="aspect-video w-20 rounded bg-muted" />
-                                                )}
-                                            </TableCell>
-                                            <TableCell className="font-medium">
-                                                {e.anime_title ?? "Unknown"}
-                                                {e.episode_number != null && (
-                                                    <span className="font-normal text-muted-foreground">
-                                                        {" "}
-                                                        (ep {e.episode_number})
-                                                    </span>
-                                                )}
-                                                <div className="mt-1 flex flex-wrap items-center gap-1.5 sm:hidden">
-                                                    {e.providers.map((p) => (
-                                                        <ProviderBadge
-                                                            key={p.name}
-                                                            provider={p.name}
-                                                        />
-                                                    ))}
-                                                    <span className="text-xs font-normal text-muted-foreground">
-                                                        {e.action} {formatRelative(e.timestamp)}
-                                                    </span>
-                                                </div>
-                                            </TableCell>
-                                            <TableCell className="hidden text-muted-foreground md:table-cell">
-                                                {e.action}
-                                            </TableCell>
-                                            <TableCell className="hidden sm:table-cell">
-                                                <div className="flex flex-wrap gap-1">
+                                        <div className="flex items-center gap-3 border-b py-2">
+                                            {src ? (
+                                                <img
+                                                    src={src}
+                                                    alt=""
+                                                    loading="lazy"
+                                                    className="aspect-video w-20 shrink-0 rounded object-cover"
+                                                />
+                                            ) : (
+                                                <div className="aspect-video w-20 shrink-0 rounded bg-muted" />
+                                            )}
+                                            <div className="min-w-0 flex-1">
+                                                <p className="truncate text-sm font-medium">
+                                                    {e.anime_title ?? "Unknown"}
+                                                    {e.episode_number != null && (
+                                                        <span className="font-normal text-muted-foreground">
+                                                            {" "}
+                                                            (ep {e.episode_number})
+                                                        </span>
+                                                    )}
+                                                </p>
+                                                <p className="text-xs text-muted-foreground">
+                                                    {e.action} {formatRelative(e.timestamp)}
+                                                </p>
+                                                <div className="mt-1 flex flex-wrap gap-1">
                                                     {e.providers.map((p) => (
                                                         <ProviderBadge
                                                             key={p.name}
@@ -172,26 +142,106 @@ const HistoryPage = () => {
                                                         />
                                                     ))}
                                                 </div>
-                                            </TableCell>
-                                            <TableCell
-                                                className="hidden whitespace-nowrap text-right text-muted-foreground sm:table-cell"
-                                                title={new Date(e.timestamp).toLocaleString()}
-                                            >
-                                                {formatRelative(e.timestamp)}
-                                            </TableCell>
-                                            <TableCell className="text-right">
-                                                {e.allSuccess ? (
-                                                    <CircleCheck className="ml-auto size-4 text-success" />
-                                                ) : (
-                                                    <CircleX className="ml-auto size-4 text-destructive" />
-                                                )}
-                                            </TableCell>
-                                        </TableRow>
+                                            </div>
+                                            {e.allSuccess ? (
+                                                <CircleCheck className="size-4 shrink-0 text-success" />
+                                            ) : (
+                                                <CircleX className="size-4 shrink-0 text-destructive" />
+                                            )}
+                                        </div>
                                     </Fragment>
                                 );
                             })}
-                        </TableBody>
-                    </Table>
+                        </div>
+
+                        <div className="hidden sm:block">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead className="w-24"></TableHead>
+                                        <TableHead>Anime</TableHead>
+                                        <TableHead>Action</TableHead>
+                                        <TableHead>Provider(s)</TableHead>
+                                        <TableHead className="text-right">When</TableHead>
+                                        <TableHead className="w-16 text-right">Result</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {rows.map((e, i) => {
+                                        const src = thumb(e.anime_image);
+                                        const label = dateLabel(e.timestamp);
+                                        const showHeader =
+                                            i === 0 || label !== dateLabel(rows[i - 1].timestamp);
+                                        return (
+                                            <Fragment key={`${e.timestamp}-${e.anime_title}-${i}`}>
+                                                {showHeader && (
+                                                    <TableRow className="hover:bg-transparent">
+                                                        <TableCell
+                                                            colSpan={6}
+                                                            className="bg-muted/40 py-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground"
+                                                        >
+                                                            {label}
+                                                        </TableCell>
+                                                    </TableRow>
+                                                )}
+                                                <TableRow>
+                                                    <TableCell>
+                                                        {src ? (
+                                                            <img
+                                                                src={src}
+                                                                alt=""
+                                                                loading="lazy"
+                                                                className="aspect-video w-20 rounded object-cover"
+                                                            />
+                                                        ) : (
+                                                            <div className="aspect-video w-20 rounded bg-muted" />
+                                                        )}
+                                                    </TableCell>
+                                                    <TableCell className="font-medium">
+                                                        {e.anime_title ?? "Unknown"}
+                                                        {e.episode_number != null && (
+                                                            <span className="font-normal text-muted-foreground">
+                                                                {" "}
+                                                                (ep {e.episode_number})
+                                                            </span>
+                                                        )}
+                                                    </TableCell>
+                                                    <TableCell className="text-muted-foreground">
+                                                        {e.action}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <div className="flex flex-wrap gap-1">
+                                                            {e.providers.map((p) => (
+                                                                <ProviderBadge
+                                                                    key={p.name}
+                                                                    provider={p.name}
+                                                                />
+                                                            ))}
+                                                        </div>
+                                                    </TableCell>
+                                                    <TableCell
+                                                        className="whitespace-nowrap text-right text-muted-foreground"
+                                                        title={new Date(
+                                                            e.timestamp
+                                                        ).toLocaleString()}
+                                                    >
+                                                        {formatRelative(e.timestamp)}
+                                                    </TableCell>
+                                                    <TableCell className="text-right">
+                                                        {e.allSuccess ? (
+                                                            <CircleCheck className="ml-auto size-4 text-success" />
+                                                        ) : (
+                                                            <CircleX className="ml-auto size-4 text-destructive" />
+                                                        )}
+                                                    </TableCell>
+                                                </TableRow>
+                                            </Fragment>
+                                        );
+                                    })}
+                                </TableBody>
+                            </Table>
+                        </div>
+                    </>
                 )}
 
                 {canLoadMore && (

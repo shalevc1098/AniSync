@@ -79,11 +79,11 @@ const RecentActivity = () => {
                                 <p className="text-xs text-muted-foreground">
                                     {e.action} {formatRelative(e.timestamp)}
                                 </p>
-                            </div>
-                            <div className="flex shrink-0 flex-wrap justify-end gap-1">
-                                {e.providers.map((p) => (
-                                    <ProviderBadge key={p.name} provider={p.name} />
-                                ))}
+                                <div className="mt-1 flex flex-wrap gap-1">
+                                    {e.providers.map((p) => (
+                                        <ProviderBadge key={p.name} provider={p.name} />
+                                    ))}
+                                </div>
                             </div>
                             {e.allSuccess ? (
                                 <CircleCheck className="size-4 shrink-0 text-success" />
