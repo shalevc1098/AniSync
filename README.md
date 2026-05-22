@@ -29,13 +29,13 @@ manage everything.
 
 | Dashboard | Settings | History |
 | --- | --- | --- |
-| ![Dashboard](docs/img/dashboard.png) | ![Settings](docs/img/settings.png) | ![History](docs/img/history.png) |
+| ![Dashboard](docs/screenshots/dashboard.png) | ![Settings](docs/screenshots/settings.png) | ![History](docs/screenshots/history.png) |
 
 And on mobile:
 
 | Dashboard | Settings | History |
 | --- | --- | --- |
-| ![Dashboard mobile](docs/img/dashboard-mobile.png) | ![Settings mobile](docs/img/settings-mobile.png) | ![History mobile](docs/img/history-mobile.png) |
+| ![Dashboard mobile](docs/screenshots/dashboard-mobile.png) | ![Settings mobile](docs/screenshots/settings-mobile.png) | ![History mobile](docs/screenshots/history-mobile.png) |
 
 ## Requirements
 
