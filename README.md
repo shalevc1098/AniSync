@@ -31,6 +31,10 @@ manage everything.
 | --- | --- | --- |
 | ![Dashboard](docs/screenshots/dashboard.png) | ![Settings](docs/screenshots/settings.png) | ![History](docs/screenshots/history.png) |
 
+Responsive on mobile:
+
+<p align="center"><img src="docs/screenshots/history-mobile.png" width="260" alt="History on mobile" /></p>
+
 ## Requirements
 
 - **Shoko Server** with the plugin API (built against `Shoko.Abstractions` 6.0.0-alpha.24).
