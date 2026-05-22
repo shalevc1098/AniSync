@@ -38,3 +38,6 @@ InspectTypes/
 SHOKO_API.json
 # Local build/deploy script (contains infra paths)
 build.sh
+
+# Brand asset sources (kept local)
+anisync-logos/
