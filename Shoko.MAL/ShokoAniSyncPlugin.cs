@@ -202,9 +202,8 @@ namespace Shoko.AniSync
             return anime;
         }
 
-        private async Task<Anime?> GetIdFromOfflineDb(IApiCallHelpers apiCallHelpers, ApiName provider, IShokoEpisode episode, Config config, string? shokoUsername = null)
+        private async Task<Anime?> GetIdFromOfflineDb(IApiCallHelpers apiCallHelpers, ApiName provider, IShokoEpisode episode, Config config, AnimeOfflineDatabaseHelpers.OfflineDatabaseResponse? offlineDbIds, string? shokoUsername = null)
         {
-            var offlineDbIds = await AnimeOfflineDatabaseHelpers.GetProviderIdsFromMetadataProvider(_httpClientFactory.CreateClient(), episode.Series?.AnidbAnimeID ?? 0, AnimeOfflineDatabaseHelpers.Source.Anidb);
             var providerId = provider == ApiName.AniList ? offlineDbIds?.Anilist : offlineDbIds?.Mal;
             if (offlineDbIds == null || providerId == null)
             {
@@ -294,11 +293,21 @@ namespace Shoko.AniSync
                 }
 
                 var eventId = Guid.NewGuid().ToString();
+
+                var anidbId = maxEpisode.Series?.AnidbAnimeID ?? 0;
+                var offlineKey = $"offlinedb_{anidbId}";
+                if (!_memoryCache.TryGetValue(offlineKey, out AnimeOfflineDatabaseHelpers.OfflineDatabaseResponse? offlineDbIds))
+                {
+                    offlineDbIds = await AnimeOfflineDatabaseHelpers.GetProviderIdsFromMetadataProvider(
+                        _httpClientFactory.CreateClient(), anidbId, AnimeOfflineDatabaseHelpers.Source.Anidb);
+                    _memoryCache.Set(offlineKey, offlineDbIds, TimeSpan.FromHours(1));
+                }
+
                 foreach (var syncProvider in providers)
                 {
                     try
                     {
-                        await SyncEpisodeToProviderAsync(syncProvider, shokoUser, maxEpisode, isWatched, shokoEpisodeNumber, playbackCount, eventId);
+                        await SyncEpisodeToProviderAsync(syncProvider, shokoUser, maxEpisode, isWatched, shokoEpisodeNumber, playbackCount, eventId, offlineDbIds);
                     }
                     catch (Exception ex)
                     {
@@ -312,7 +321,7 @@ namespace Shoko.AniSync
             }
         }
 
-        private async Task SyncEpisodeToProviderAsync(ApiName provider, IUser shokoUser, IShokoEpisode maxEpisode, bool isWatched, int shokoEpisodeNumber, int playbackCount, string eventId)
+        private async Task SyncEpisodeToProviderAsync(ApiName provider, IUser shokoUser, IShokoEpisode maxEpisode, bool isWatched, int shokoEpisodeNumber, int playbackCount, string eventId, AnimeOfflineDatabaseHelpers.OfflineDatabaseResponse? offlineDbIds)
         {
             var config = _configProvider.Load();
 
@@ -349,7 +358,7 @@ namespace Shoko.AniSync
                 return;
             }
 
-            var anime = await GetIdFromOfflineDb(apiCallHelpers, provider, maxEpisode, config, shokoUser?.Username);
+            var anime = await GetIdFromOfflineDb(apiCallHelpers, provider, maxEpisode, config, offlineDbIds, shokoUser?.Username);
                 if (anime != null)
                 {
                     _logger.LogInformation("Found Anime: {Title} ({Id})", anime.Title, anime.Id);
