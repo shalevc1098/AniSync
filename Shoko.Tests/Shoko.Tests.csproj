@@ -26,7 +26,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Shoko.MAL\Shoko.AniSync.csproj" />
+    <ProjectReference Include="..\Shoko.AniSync\Shoko.AniSync.csproj" />
   </ItemGroup>
 
 </Project>
