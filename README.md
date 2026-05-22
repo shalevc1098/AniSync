@@ -39,7 +39,7 @@ manage everything.
 
 ## Install
 
-1. Build the plugin (see [Development](#development)) to produce `Shoko.AniSync.dll`.
+1. Build the plugin (see [Development](#development)) to produce `AniSync.dll`.
 2. Drop the DLL into Shoko's `plugins/` folder.
 3. Restart Shoko. The plugin serves its UI at `/anisync`.
 
@@ -90,17 +90,17 @@ Backend is C# / .NET 10; the frontend is React + Vite + TypeScript and is **buil
 plugin's `wwwroot/app`** and embedded in the DLL.
 
 ```bash
-# 1. Build the web UI (outputs into Shoko.AniSync/wwwroot/app)
+# 1. Build the web UI (outputs into AniSync/wwwroot/app)
 cd client && npm install && npm run build && cd ..
 
 # 2. Build the plugin
-dotnet build Shoko.AniSync/Shoko.AniSync.csproj -c Release
+dotnet build AniSync/AniSync.csproj -c Release
 
 # 3. Copy the DLL into Shoko's plugins/ folder and restart Shoko
-#    Shoko.AniSync/bin/Release/net10.0/Shoko.AniSync.dll
+#    AniSync/bin/Release/net10.0/AniSync.dll
 
 # Run the tests
-dotnet test Shoko.Tests/Shoko.Tests.csproj
+dotnet test AniSync.Tests/AniSync.Tests.csproj
 ```
 
 ## Tech stack

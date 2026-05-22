@@ -13,7 +13,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: '../Shoko.AniSync/wwwroot/app',
+    outDir: '../AniSync/wwwroot/app',
     emptyOutDir: true,
   },
 })
