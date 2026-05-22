@@ -42,9 +42,13 @@ namespace Shoko.AniSync.Api
             _configProvider = configProvider;
             _applicationPaths = applicationPaths;
 
-            var gs = GlobalSettings.Load(applicationPaths);
-            _clientId = gs?.MalClientId ?? string.Empty;
-            _clientSecret = gs?.MalClientSecret ?? string.Empty;
+            var config = configProvider.Load();
+            (_clientId, _clientSecret) = provider switch
+            {
+                ApiName.Mal => (config?.MalClientId ?? string.Empty, config?.MalClientSecret ?? string.Empty),
+                ApiName.AniList => (config?.AniListClientId ?? string.Empty, config?.AniListClientSecret ?? string.Empty),
+                _ => throw new ArgumentOutOfRangeException(nameof(provider), provider, null),
+            };
 
             _providerApiAuth =  new ProviderApiAuth()
             {
@@ -53,10 +57,10 @@ namespace Shoko.AniSync.Api
                 ClientSecret = _clientSecret
             };
 
-            // TODO: Add support for other providers
             _authApiUrl = provider switch
             {
                 ApiName.Mal => "https://myanimelist.net/v1/oauth2",
+                ApiName.AniList => "https://anilist.co/api/v2/oauth",
                 _ => throw new ArgumentOutOfRangeException(nameof(provider), provider, null),
             };
             _redirectUrl = baseUrl?.TrimEnd('/') + "/anisync/authCallback";
@@ -78,6 +82,14 @@ namespace Shoko.AniSync.Api
                         url += $"&state={Uri.EscapeDataString(state)}";
                     }
                     return url;
+                case ApiName.AniList:
+                    // Confidential client (has secret) > standard auth-code grant, no PKCE.
+                    var aniUrl = $"{_authApiUrl}/authorize?client_id={_providerApiAuth.ClientId}&redirect_uri={Uri.EscapeDataString(_redirectUrl)}&response_type=code";
+                    if (!string.IsNullOrEmpty(state))
+                    {
+                        aniUrl += $"&state={Uri.EscapeDataString(state)}";
+                    }
+                    return aniUrl;
                 default:
                     throw new ArgumentOutOfRangeException();
             }
@@ -147,50 +159,46 @@ namespace Shoko.AniSync.Api
                             : (long?)null
                     };
 
-                    if (_provider is ApiName.Mal)
+                    newUserApiAuth.RefreshToken = tokenResponse.refresh_token ?? string.Empty;
+
+                    if (tokenResponse.expires_in.HasValue)
                     {
-                        newUserApiAuth.RefreshToken = tokenResponse.refresh_token ?? string.Empty;
+                        _logger.LogInformation("Token expires in {Seconds} seconds ({Days} days)",
+                            tokenResponse.expires_in.Value, tokenResponse.expires_in.Value / 86400);
+                    }
 
-                        // Log token expiration info
-                        if (tokenResponse.expires_in.HasValue)
+                    if (refreshToken != null)
+                    {
+                        // Token refresh: preserve existing username from config
+                        var existingAuth = pluginConfig.GetAuthForShokoUser(shokoUsername, _provider);
+                        if (!string.IsNullOrEmpty(existingAuth?.Username))
                         {
-                            _logger.LogInformation("Token expires in {Seconds} seconds ({Days} days)",
-                                tokenResponse.expires_in.Value,
-                                tokenResponse.expires_in.Value / 86400);
+                            newUserApiAuth.Username = existingAuth.Username;
                         }
-
-                        if (refreshToken != null)
+                    }
+                    else if (!string.IsNullOrEmpty(shokoUsername))
+                    {
+                        // Initial auth: save the token first so the provider API can use it, then fetch the username.
+                        newUserApiAuth.ShokoUsername = shokoUsername;
+                        pluginConfig.SetAuthForShokoUser(shokoUsername, _provider, newUserApiAuth);
+                        _configProvider.Save(pluginConfig);
+                        try
                         {
-                            // Token refresh: preserve existing username from config
-                            var existingAuth = pluginConfig.GetAuthForShokoUser(shokoUsername, _provider);
-                            if (!string.IsNullOrEmpty(existingAuth?.Username))
+                            string? name = _provider switch
                             {
-                                newUserApiAuth.Username = existingAuth.Username;
-                                _logger.LogInformation("Preserved existing MAL username on token refresh: {Username}", existingAuth.Username);
+                                ApiName.Mal => new MalApiCalls(_httpClientFactory, _loggerFactory, _memoryCache, new Delayer(), _configProvider, _applicationPaths).GetUserInformation(shokoUsername).Result?.Name,
+                                ApiName.AniList => new AniListApiCalls(_httpClientFactory, _loggerFactory, _memoryCache, new Delayer(), _configProvider, _applicationPaths).GetUserInformation(shokoUsername).Result?.Name,
+                                _ => null
+                            };
+                            if (!string.IsNullOrEmpty(name))
+                            {
+                                newUserApiAuth.Username = name;
+                                _logger.LogInformation("Retrieved {Provider} username: {Username}", _provider, name);
                             }
                         }
-                        else
+                        catch (Exception ex)
                         {
-                            // Initial auth: fetch MAL username from API
-                            try
-                            {
-                                if (!string.IsNullOrEmpty(shokoUsername))
-                                {
-                                    pluginConfig.SetAuthForShokoUser(shokoUsername, _provider, newUserApiAuth);
-                                    _configProvider.Save(pluginConfig);
-                                    var malApi = new MalApiCalls(_httpClientFactory, _loggerFactory, _memoryCache, new Delayer(), _configProvider, _applicationPaths);
-                                    var userInfo = malApi.GetUserInformation(shokoUsername).Result;
-                                    if (userInfo != null)
-                                    {
-                                        newUserApiAuth.Username = userInfo.Name;
-                                        _logger.LogInformation("Retrieved MAL username: {Username}", userInfo.Name);
-                                    }
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger.LogError(ex, "Failed to retrieve MAL username");
-                            }
+                            _logger.LogError(ex, "Failed to retrieve {Provider} username", _provider);
                         }
                     }
 
@@ -207,8 +215,8 @@ namespace Shoko.AniSync.Api
                     newUserApiAuth.ShokoUsername = userToLink;
                     pluginConfig.SetAuthForShokoUser(userToLink, _provider, newUserApiAuth);
                     _configProvider.Save(pluginConfig);
-                    _logger.LogInformation("Linked MAL account {MalUser} to Shoko user {ShokoUser}",
-                        newUserApiAuth.Username, userToLink);
+                    _logger.LogInformation("Linked {Provider} account {User} to Shoko user {ShokoUser}",
+                        _provider, newUserApiAuth.Username, userToLink);
                     return newUserApiAuth;
                 }
             }

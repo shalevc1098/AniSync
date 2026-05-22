@@ -111,7 +111,6 @@ public class ConfigTests
             RefreshToken = "refresh123"
         };
         _config.SetAuthForShokoUser("shalev", ApiName.Mal, auth);
-        _config.SelectedProvider = ApiName.Mal;
 
         // Act
         var result = _config.GetAuthForShokoUser("shalev");
@@ -148,7 +147,6 @@ public class ConfigTests
         };
         _config.SetAuthForShokoUser("shalev", ApiName.Mal, malAuth);
         _config.SetAuthForShokoUser("shalev", ApiName.AniList, anilistAuth);
-        _config.SelectedProvider = ApiName.Mal; // Default is MAL
 
         // Act
         var result = _config.GetAuthForShokoUser("shalev", ApiName.AniList);
@@ -289,10 +287,9 @@ public class ConfigTests
     }
 
     [Fact]
-    public void GetAuthForShokoUser_With_Default_Provider_Should_Use_SelectedProvider()
+    public void GetAuthForShokoUser_With_No_Provider_Should_Use_First_Connected()
     {
         // Arrange
-        _config.SelectedProvider = ApiName.Mal;
         _config.SetAuthForShokoUser("user1", ApiName.Mal,
             new UserApiAuth { Username = "mal_user", AccessToken = "mal_token" });
         _config.SetAuthForShokoUser("user1", ApiName.AniList,
@@ -304,15 +301,6 @@ public class ConfigTests
         // Assert
         result.Should().NotBeNull();
         result!.Username.Should().Be("mal_user");
-    }
-
-    [Fact]
-    public void SelectedProvider_Set_Should_Use_Configured_Value()
-    {
-        ApiName? provider = ApiName.AniList;
-        var result = provider ?? ApiName.Mal;
-
-        result.Should().Be(ApiName.AniList);
     }
 
     // ========================================================================

@@ -1,4 +1,5 @@
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using Shoko.Abstractions.Config;
 using Shoko.Abstractions.Plugin;
 using System.Collections.Concurrent;
@@ -16,12 +17,33 @@ namespace Shoko.AniSync.Configuration
         [JsonProperty("users")]
         public ConcurrentDictionary<string, UserConfig> Users { get; set; } = new();
 
-        [Display(Name = "Default Provider")]
-        [DefaultValue(ApiName.Mal)]
-        [JsonProperty("selectedProvider")]
-        public ApiName SelectedProvider { get; set; } = ApiName.Mal;
+        [Display(Name = "MAL Client ID")]
+        [JsonProperty("malClientId")]
+        public string? MalClientId { get; set; }
+
+        [Display(Name = "MAL Client Secret")]
+        [JsonProperty("malClientSecret")]
+        public string? MalClientSecret { get; set; }
+
+        [Display(Name = "AniList Client ID")]
+        [JsonProperty("aniListClientId")]
+        public string? AniListClientId { get; set; }
+
+        [Display(Name = "AniList Client Secret")]
+        [JsonProperty("aniListClientSecret")]
+        public string? AniListClientSecret { get; set; }
+
+        [JsonProperty("stateSigningKey")]
+        public string? StateSigningKey { get; set; }
 
         public static string ApplyMigrations(string config, IApplicationPaths applicationPaths)
+        {
+            config = MigrateLegacyUsers(config, applicationPaths);
+            config = MigrateGlobalSettings(config, applicationPaths);
+            return config;
+        }
+
+        private static string MigrateLegacyUsers(string config, IApplicationPaths applicationPaths)
         {
             var oldPath = Path.Combine(applicationPaths.PluginsPath, "AniSync", "config.json");
 
@@ -34,16 +56,46 @@ namespace Shoko.AniSync.Configuration
                 var oldData = File.ReadAllText(oldPath);
                 if (!string.IsNullOrWhiteSpace(oldData))
                 {
-                    return $"{{\"users\":{oldData},\"selectedProvider\":\"Mal\"}}";
+                    return $"{{\"users\":{oldData}}}";
                 }
             }
 
             if (!string.IsNullOrWhiteSpace(config) && !config.Contains("\"users\"") && config.Contains("\"providers\""))
             {
-                return $"{{\"users\":{config},\"selectedProvider\":\"Mal\"}}";
+                return $"{{\"users\":{config}}}";
             }
 
             return config;
+        }
+
+        private static string MigrateGlobalSettings(string config, IApplicationPaths applicationPaths)
+        {
+            var gsPath = Path.Combine(applicationPaths.PluginsPath, "AniSync", "global-settings.json");
+            if (!File.Exists(gsPath)) return config;
+
+            try
+            {
+                var root = string.IsNullOrWhiteSpace(config) ? new JObject() : JObject.Parse(config);
+                if (root.ContainsKey("malClientId") || root.ContainsKey("aniListClientId") || root.ContainsKey("stateSigningKey"))
+                    return config;
+
+                var gs = JObject.Parse(File.ReadAllText(gsPath));
+                void Copy(string from, string to)
+                {
+                    var v = gs[from];
+                    if (v != null && v.Type != JTokenType.Null) root[to] = v;
+                }
+                Copy("MalClientId", "malClientId");
+                Copy("MalClientSecret", "malClientSecret");
+                Copy("AniListClientId", "aniListClientId");
+                Copy("AniListClientSecret", "aniListClientSecret");
+                Copy("StateSigningKey", "stateSigningKey");
+                return root.ToString(Formatting.None);
+            }
+            catch
+            {
+                return config;
+            }
         }
 
         // Get all authenticated users from the config
@@ -95,18 +147,35 @@ namespace Shoko.AniSync.Configuration
             Users[username] = config;
         }
 
+        // The providers this Shoko user has connected (parsed from the per-user Providers keys).
+        public List<ApiName> GetConnectedProviders(string? shokoUsername)
+        {
+            var result = new List<ApiName>();
+            var userConfig = GetUserConfig(shokoUsername);
+            if (userConfig?.Providers == null) return result;
+            foreach (var key in userConfig.Providers.Keys)
+            {
+                if (System.Enum.TryParse<ApiName>(key, true, out var p) && System.Enum.IsDefined(typeof(ApiName), p))
+                    result.Add(p);
+            }
+            return result;
+        }
+
         // Get auth for a specific Shoko user and provider
         public UserApiAuth? GetAuthForShokoUser(string? shokoUsername, ApiName? provider = null)
         {
             if (string.IsNullOrEmpty(shokoUsername)) return null;
 
             var userConfig = GetUserConfig(shokoUsername);
-            if (userConfig?.Providers != null)
+            if (userConfig?.Providers != null && userConfig.Providers.Count > 0)
             {
-                // Use the user's selected provider if no specific provider is requested
-                var providerName = provider?.ToString() ?? userConfig.SelectedProvider ?? "Mal";
+                ProviderAuth? providerAuth;
+                if (provider != null)
+                    userConfig.Providers.TryGetValue(provider.ToString()!, out providerAuth);
+                else
+                    providerAuth = userConfig.Providers.Values.FirstOrDefault();
 
-                if (userConfig.Providers.TryGetValue(providerName, out var providerAuth))
+                if (providerAuth != null)
                 {
                     return new UserApiAuth
                     {

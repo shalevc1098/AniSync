@@ -10,9 +10,6 @@ namespace Shoko.AniSync.Configuration
 
         [JsonProperty("settings")]
         public UserSettings Settings { get; set; } = UserSettings.CreateWithDefaults();
-
-        [JsonProperty("selected_provider")]
-        public string SelectedProvider { get; set; } = "Mal";
     }
 
     public class ProviderAuth

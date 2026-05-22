@@ -89,31 +89,33 @@ namespace Shoko.AniSync.Controllers
             var requestHost = _httpContextAccessor?.HttpContext?.Request?.Host.Host;
             var effectiveBaseUrl = IsAllowedBaseUrl(baseUrl, requestHost) ? baseUrl!.TrimEnd('/') : ShokoApiBaseUrl;
 
-            var state = SignState(shokoUsername, effectiveBaseUrl);
+            var state = SignState(shokoUsername, effectiveBaseUrl, provider);
             var url = new ApiAuthentication(provider, _httpClientFactory, _loggerFactory, _configProvider, _applicationPaths, _memoryCache, effectiveBaseUrl).BuildAuthorizeRequestUrl(state);
             return Content(url, "text/plain");
         }
 
-        /// <summary>HMAC-signs an OAuth state binding the authorized Shoko user + baseUrl, with a 10-minute expiry.</summary>
-        private string SignState(string user, string baseUrl)
+        /// <summary>HMAC-signs an OAuth state binding the authorized Shoko user + baseUrl + provider, with a 10-minute expiry.</summary>
+        private string SignState(string user, string baseUrl, ApiName provider)
         {
             var payload = JsonSerializer.Serialize(new
             {
                 u = user,
                 b = baseUrl,
+                p = provider.ToString(),
                 exp = DateTimeOffset.UtcNow.AddMinutes(10).ToUnixTimeSeconds()
             });
             var payloadBytes = System.Text.Encoding.UTF8.GetBytes(payload);
-            var key = GlobalSettings.GetOrCreateStateSigningKey(_applicationPaths);
+            var key = GetStateSigningKey();
             using var hmac = new System.Security.Cryptography.HMACSHA256(key);
             return Base64Url(payloadBytes) + "." + Base64Url(hmac.ComputeHash(payloadBytes));
         }
 
-        /// <summary>Verifies a signed OAuth state (signature + expiry) and extracts the bound user/baseUrl.</summary>
-        private bool TryVerifyState(string state, out string? user, out string? baseUrl)
+        /// <summary>Verifies a signed OAuth state (signature + expiry) and extracts the bound user/baseUrl/provider.</summary>
+        private bool TryVerifyState(string state, out string? user, out string? baseUrl, out ApiName provider)
         {
             user = null;
             baseUrl = null;
+            provider = ApiName.Mal;
             try
             {
                 var parts = state.Split('.');
@@ -121,7 +123,7 @@ namespace Shoko.AniSync.Controllers
 
                 var payloadBytes = Base64UrlDecode(parts[0]);
                 var providedSig = Base64UrlDecode(parts[1]);
-                var key = GlobalSettings.GetOrCreateStateSigningKey(_applicationPaths);
+                var key = GetStateSigningKey();
                 using var hmac = new System.Security.Cryptography.HMACSHA256(key);
                 var expectedSig = hmac.ComputeHash(payloadBytes);
                 if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(providedSig, expectedSig))
@@ -133,6 +135,8 @@ namespace Shoko.AniSync.Controllers
 
                 user = obj.TryGetProperty("u", out var uEl) ? uEl.GetString() : null;
                 baseUrl = obj.TryGetProperty("b", out var bEl) ? bEl.GetString() : null;
+                if (obj.TryGetProperty("p", out var pEl) && Enum.TryParse<ApiName>(pEl.GetString(), out var parsed))
+                    provider = parsed;
                 return !string.IsNullOrEmpty(user);
             }
             catch
@@ -164,32 +168,31 @@ namespace Shoko.AniSync.Controllers
         [Route("authCallback")]
         public IActionResult MalCallback(string code, string? state = null)
         {
-            ApiName provider = ApiName.Mal;
             try
             {
                 // The state must be a valid, unexpired, server-signed token. Its bound user
-                // is trusted; a forged/tampered state (e.g. naming another user) is rejected.
-                if (string.IsNullOrEmpty(state) || !TryVerifyState(state, out var shokoUsername, out var callbackBaseUrl) || string.IsNullOrEmpty(shokoUsername))
+                // and provider are trusted; a forged/tampered state is rejected.
+                if (string.IsNullOrEmpty(state) || !TryVerifyState(state, out var shokoUsername, out var callbackBaseUrl, out var provider) || string.IsNullOrEmpty(shokoUsername))
                 {
                     _logger.LogWarning("OAuth callback rejected: missing or invalid signed state");
                     return Redirect("/anisync?error=invalid_state");
                 }
 
                 var effectiveBaseUrl = string.IsNullOrEmpty(callbackBaseUrl) ? ShokoApiBaseUrl : callbackBaseUrl;
-                _logger.LogInformation("Authenticating MAL for Shoko user: {ShokoUsername} with baseUrl: {BaseUrl}", shokoUsername, effectiveBaseUrl);
+                _logger.LogInformation("Authenticating {Provider} for Shoko user: {ShokoUsername} with baseUrl: {BaseUrl}", provider, shokoUsername, effectiveBaseUrl);
                 new ApiAuthentication(provider, _httpClientFactory, _loggerFactory, _configProvider, _applicationPaths, _memoryCache, effectiveBaseUrl).GetToken(code, shokoUsername: shokoUsername, state: state);
 
                 return Redirect("/anisync?success=connected");
             }
             catch (AuthenticationException authEx)
             {
-                _logger.LogError(authEx, "Failed to retrieve MAL token: {Message}", authEx.Message);
+                _logger.LogError(authEx, "Failed to retrieve OAuth token: {Message}", authEx.Message);
                 return Redirect("/anisync?error=" + Uri.EscapeDataString(authEx.Message));
             }
             catch (HttpRequestException httpEx)
             {
-                _logger.LogError(httpEx, "HTTP request to MAL failed");
-                return Redirect("/anisync?error=Failed+to+connect+to+MyAnimeList");
+                _logger.LogError(httpEx, "OAuth token request to provider failed");
+                return Redirect("/anisync?error=Failed+to+connect+to+provider");
             }
             catch (Exception ex)
             {
@@ -233,27 +236,6 @@ namespace Shoko.AniSync.Controllers
             }
         }
         
-        [HttpGet]
-        [Route("")]
-        public IActionResult Index()
-        {
-            // Static page: no per-user data is rendered server-side. The page loads the
-            // current user's dashboard client-side from /anisync/api/dashboard (apikey header).
-            var html = GetLayout("Dashboard", LoadEmbeddedResource("dashboard.html"));
-            return Content(html, "text/html");
-        }
-        
-        
-        [HttpGet]
-        [Route("Settings")]
-        public IActionResult Settings()
-        {
-            // Static page: no per-user data is rendered server-side. The page loads the
-            // current user's settings + MAL status client-side from /anisync/api/user/settings.
-            var html = GetLayout("Settings", LoadEmbeddedResource("settings.html"));
-            return Content(html, "text/html");
-        }
-        
         [HttpPost]
         [Route("Settings")]
         public IActionResult Settings([FromBody] SettingsViewModel model)
@@ -291,80 +273,67 @@ namespace Shoko.AniSync.Controllers
                 SyncDelaySeconds = model.SyncDelaySeconds,
                 EnableDebugLogging = model.EnableDebugLogging
             });
+            _configProvider.Save(config);
 
             _logger.LogInformation("Settings saved successfully for user: {Username}", shokoUsername);
 
-            return Redirect("/anisync/settings");
+            return Json(new { success = true });
         }
-        
-        [HttpGet]
-        [Route("History")]
-        public IActionResult History()
-        {
-            // Static page: no per-user data is rendered server-side. The page loads the
-            // current user's history client-side from /anisync/api/history (apikey header).
-            var html = GetLayout("Sync History", LoadEmbeddedResource("history.html"));
-            return Content(html, "text/html");
-        }
-        
-        // Logout
+
+        // Disconnect a provider for the current user. Defaults to Mal for backward compatibility.
         [HttpPost]
         [Route("Logout")]
-        public IActionResult Logout()
+        public IActionResult Logout(string provider = "Mal")
         {
-            var config = _configProvider.Load();
             var currentUser = GetCurrentShokoUser();
-            
-            if (!string.IsNullOrEmpty(currentUser) && config?.Users.ContainsKey(currentUser) == true)
+            if (string.IsNullOrEmpty(currentUser))
+                return Unauthorized(new { error = "Authentication required" });
+            if (!Helpers.ProviderApiFactory.TryParseProvider(provider, out var providerEnum))
+                return BadRequest(new { error = "Invalid provider" });
+
+            var config = _configProvider.Load();
+            if (config?.Users.TryGetValue(currentUser, out var userConfig) == true
+                && userConfig?.Providers?.Remove(providerEnum.ToString()) == true)
             {
-                var userConfig = config.Users[currentUser];
-                if (userConfig?.Providers?.ContainsKey("Mal") == true)
-                {
-                    userConfig.Providers.Remove("Mal");
-                    _configProvider.Save(config);
-                }
+                _configProvider.Save(config);
+                _logger.LogInformation("Disconnected {Provider} for Shoko user {User}", providerEnum, currentUser);
             }
-            
-            
-            return RedirectToAction("Index");
+            return Json(new { success = true });
         }
-        
-        // Refresh token
+
+        // Refresh the access token for a provider. Defaults to Mal for backward compatibility.
         [HttpPost]
         [Route("refresh-token")]
-        public async Task<IActionResult> RefreshToken()
+        public async Task<IActionResult> RefreshToken(string provider = "Mal")
         {
+            var shokoUsername = GetCurrentShokoUser();
+            if (string.IsNullOrEmpty(shokoUsername))
+                return Unauthorized(new { error = "Authentication required" });
+            if (!Helpers.ProviderApiFactory.TryParseProvider(provider, out var providerEnum))
+                return BadRequest(new { error = "Invalid provider" });
+
             try
             {
-                var shokoUsername = GetCurrentShokoUser();
-                if (string.IsNullOrEmpty(shokoUsername))
-                {
-                    _logger.LogError("Cannot refresh token without a valid Shoko user");
-                    return RedirectToAction("Index");
-                }
-                
-                var auth = new ApiAuthentication(ApiName.Mal, _httpClientFactory, _loggerFactory, _configProvider, _applicationPaths, _memoryCache);
+                var auth = new ApiAuthentication(providerEnum, _httpClientFactory, _loggerFactory, _configProvider, _applicationPaths, _memoryCache);
                 await auth.RefreshAccessToken(shokoUsername);
-                
+                return Json(new { success = true });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to refresh token");
+                _logger.LogError(ex, "Failed to refresh {Provider} token", providerEnum);
+                return Json(new { success = false });
             }
-            
-            return Redirect("/anisync/settings");
         }
         
-        private object? GetUserProperty(object user, string propertyName)
+        private byte[] GetStateSigningKey()
         {
-            try
+            var config = _configProvider.Load();
+            if (string.IsNullOrEmpty(config.StateSigningKey))
             {
-                return user?.GetType().GetProperty(propertyName)?.GetValue(user);
+                config.StateSigningKey = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
+                _configProvider.Save(config);
             }
-            catch
-            {
-                return null;
-            }
+            return Convert.FromBase64String(config.StateSigningKey);
         }
 
         /// <summary>True if the resolved caller is a Shoko admin. Used to gate global settings.</summary>
@@ -374,9 +343,7 @@ namespace Shoko.AniSync.Controllers
             if (string.IsNullOrEmpty(username) || _userService == null) return false;
             try
             {
-                var user = _userService.GetUsers()?
-                    .FirstOrDefault(u => string.Equals(GetUserProperty(u, "Username") as string, username, StringComparison.Ordinal));
-                return user != null && GetUserProperty(user, "IsAdmin") as bool? == true;
+                return _userService.GetUserByUsername(username)?.IsAdmin == true;
             }
             catch (Exception ex)
             {
@@ -457,21 +424,13 @@ namespace Shoko.AniSync.Controllers
                 return Unauthorized(new { error = "Authentication required" });
             }
 
-            var gs = GlobalSettings.Load(_applicationPaths);
-            // Bug 6 fix: handle short secrets safely
-            string maskedSecret;
-            var secret = gs?.MalClientSecret;
-            if (string.IsNullOrEmpty(secret))
-                maskedSecret = string.Empty;
-            else if (secret.Length <= 4)
-                maskedSecret = new string('*', secret.Length);
-            else
-                maskedSecret = new string('*', secret.Length - 4) + secret[^4..];
-
+            var config = _configProvider.Load();
             return Json(new
             {
-                malClientId = gs?.MalClientId ?? string.Empty,
-                malClientSecret = maskedSecret
+                malClientId = config?.MalClientId ?? string.Empty,
+                malClientSecret = config?.MalClientSecret ?? string.Empty,
+                aniListClientId = config?.AniListClientId ?? string.Empty,
+                aniListClientSecret = config?.AniListClientSecret ?? string.Empty
             });
         }
 
@@ -485,59 +444,45 @@ namespace Shoko.AniSync.Controllers
                 return Unauthorized(new { error = "Authentication required" });
             }
 
-            // Global MAL credentials affect every user, so only admins may change them.
+            // Global API credentials affect every user, so only admins may change them.
             if (!IsCurrentUserAdmin())
             {
-                return StatusCode(403, new { error = "Only an administrator can change MAL API credentials" });
+                return StatusCode(403, new { error = "Only an administrator can change API credentials" });
             }
 
             if (request == null)
                 return BadRequest(new { error = "Invalid request body" });
 
-            var existing = GlobalSettings.Load(_applicationPaths);
+            var config = _configProvider.Load();
 
-            // If the incoming secret is the masked version (starts with *), keep the existing secret
-            var effectiveSecret = request.MalClientSecret;
-            if (!string.IsNullOrEmpty(effectiveSecret) && effectiveSecret.StartsWith('*') && existing != null)
-            {
-                effectiveSecret = existing.MalClientSecret;
-            }
+            var malSecret = request.MalClientSecret;
+            var aniSecret = request.AniListClientSecret;
 
-            bool credentialsChanged = existing != null &&
-                (!string.IsNullOrEmpty(existing.MalClientId) || !string.IsNullOrEmpty(existing.MalClientSecret)) &&
-                (existing.MalClientId != request.MalClientId || existing.MalClientSecret != effectiveSecret);
+            bool malChanged = (!string.IsNullOrEmpty(config.MalClientId) || !string.IsNullOrEmpty(config.MalClientSecret)) &&
+                (config.MalClientId != request.MalClientId || config.MalClientSecret != malSecret);
+            bool aniChanged = (!string.IsNullOrEmpty(config.AniListClientId) || !string.IsNullOrEmpty(config.AniListClientSecret)) &&
+                (config.AniListClientId != request.AniListClientId || config.AniListClientSecret != aniSecret);
 
-            var gs = new GlobalSettings
-            {
-                MalClientId = request.MalClientId,
-                MalClientSecret = effectiveSecret
-            };
-            gs.Save(_applicationPaths);
+            config.MalClientId = request.MalClientId;
+            config.MalClientSecret = malSecret;
+            config.AniListClientId = request.AniListClientId;
+            config.AniListClientSecret = aniSecret;
 
             bool reAuthRequired = false;
-            if (credentialsChanged)
+            var toClear = new List<string>();
+            if (malChanged) toClear.Add("Mal");
+            if (aniChanged) toClear.Add("AniList");
+            foreach (var kvp in config.Users)
             {
-                // Clear all MAL provider auth since tokens are tied to the old app credentials
-                var config = _configProvider.Load();
-                bool anyCleared = false;
-                foreach (var kvp in config.Users)
+                foreach (var name in toClear)
                 {
-                    if (kvp.Value?.Providers?.ContainsKey("Mal") == true)
-                    {
-                        kvp.Value.Providers.Remove("Mal");
-                        anyCleared = true;
-                    }
-                }
-                if (anyCleared)
-                {
-                    _configProvider.Save(config);
-                    reAuthRequired = true;
-                    _logger.LogInformation("Cleared MAL auth for all users due to credential change");
+                    if (kvp.Value?.Providers?.Remove(name) == true) reAuthRequired = true;
                 }
             }
 
-            _logger.LogInformation("Global settings saved. Credentials changed: {Changed}, Re-auth required: {ReAuth}",
-                credentialsChanged, reAuthRequired);
+            _configProvider.Save(config);
+            if (reAuthRequired)
+                _logger.LogInformation("Cleared auth for providers [{Providers}] due to credential change", string.Join(", ", toClear));
 
             return Json(new { success = true, reAuthRequired });
         }
@@ -655,8 +600,7 @@ namespace Shoko.AniSync.Controllers
                 return Unauthorized();
 
             var config = _configProvider.Load();
-            var userAuth = config.GetAuthForShokoUser(shokoUsername);
-            var isAuthenticated = !string.IsNullOrEmpty(userAuth?.AccessToken);
+            var isAuthenticated = config.GetConnectedProviders(shokoUsername).Count > 0;
 
             int syncedAnime = 0;
             DateTime? lastSync = null;
@@ -692,13 +636,25 @@ namespace Shoko.AniSync.Controllers
                 isAuthenticated,
                 isAdmin = IsCurrentUserAdmin(),
                 shokoUsername,
-                malUsername = userAuth?.Username,
+                providers = BuildProviderStatus(config, shokoUsername),
                 syncedAnime,
                 totalAnime = syncedAnime,
                 lastSync,
                 pendingUpdates = 0,
                 accounts
             });
+        }
+
+        /// <summary>Per-provider connection status for the given user (used by the dashboard/settings UI).</summary>
+        private object BuildProviderStatus(Config config, string shokoUsername)
+        {
+            var mal = config.GetAuthForShokoUser(shokoUsername, ApiName.Mal);
+            var ani = config.GetAuthForShokoUser(shokoUsername, ApiName.AniList);
+            return new
+            {
+                mal = new { connected = !string.IsNullOrEmpty(mal?.AccessToken), username = mal?.Username, configured = !string.IsNullOrEmpty(config.MalClientId) },
+                aniList = new { connected = !string.IsNullOrEmpty(ani?.AccessToken), username = ani?.Username, configured = !string.IsNullOrEmpty(config.AniListClientId) }
+            };
         }
 
         /// <summary>
@@ -713,15 +669,14 @@ namespace Shoko.AniSync.Controllers
                 return Unauthorized();
 
             var config = _configProvider.Load();
-            var userAuth = config.GetAuthForShokoUser(shokoUsername);
-            var isAuthenticated = !string.IsNullOrEmpty(userAuth?.AccessToken);
+            var isAuthenticated = config.GetConnectedProviders(shokoUsername).Count > 0;
 
             return JsonCamel(new
             {
                 isAuthenticated,
                 isAdmin = IsCurrentUserAdmin(),
                 shokoUsername,
-                malUsername = userAuth?.Username,
+                providers = BuildProviderStatus(config, shokoUsername),
                 settings = new
                 {
                     updateNsfw = config.GetUpdateNsfw(shokoUsername),
@@ -769,34 +724,52 @@ namespace Shoko.AniSync.Controllers
             }
         }
         
-        private string LoadEmbeddedResource(string resourceName)
+        // Serves the embedded SPA: a real built asset if the path matches one, else index.html
+        // so client-side routing handles the URL. Specific API routes win over this catch-all.
+        [HttpGet]
+        [Route("{**path}")]
+        public IActionResult Spa(string? path = null)
         {
-            var assembly = typeof(AniSyncController).Assembly;
-            var fullResourceName = $"Shoko.AniSync.wwwroot.anisync.{resourceName}";
-            
-            using var stream = assembly.GetManifestResourceStream(fullResourceName);
-            if (stream == null)
+            if (!string.IsNullOrEmpty(path))
             {
-                _logger.LogError("Could not find embedded resource: {ResourceName}", fullResourceName);
-                return $"<!-- Resource not found: {resourceName} -->";
+                var asset = GetEmbeddedAsset(path);
+                if (asset != null)
+                    return File(asset, ContentTypeFor(path));
             }
-            
-            using var reader = new StreamReader(stream);
-            return reader.ReadToEnd();
-        }
-        
-        /// <summary>
-        /// Composes a page from the static layout + navbar. No per-user data is rendered
-        /// server-side; the navbar and page content populate themselves via authenticated
-        /// fetch calls. This is the form used by the static-page + JSON-API design.
-        /// </summary>
-        private string GetLayout(string title, string content)
-        {
-            return LoadEmbeddedResource("layout.html")
-                .Replace("{TITLE}", title)
-                .Replace("{NAVBAR}", LoadEmbeddedResource("navbar-auth.html"))
-                .Replace("{CONTENT}", content);
+
+            var index = GetEmbeddedAsset("index.html");
+            if (index == null) return NotFound();
+            return File(index, "text/html");
         }
 
+        private static byte[]? GetEmbeddedAsset(string relativePath)
+        {
+            var assembly = typeof(AniSyncController).Assembly;
+            using var stream = assembly.GetManifestResourceStream($"app/{relativePath}");
+            if (stream == null) return null;
+            using var ms = new MemoryStream();
+            stream.CopyTo(ms);
+            return ms.ToArray();
+        }
+
+        private static string ContentTypeFor(string path)
+        {
+            var ext = Path.GetExtension(path).ToLowerInvariant();
+            return ext switch
+            {
+                ".html" => "text/html",
+                ".js" => "text/javascript",
+                ".css" => "text/css",
+                ".svg" => "image/svg+xml",
+                ".woff2" => "font/woff2",
+                ".woff" => "font/woff",
+                ".png" => "image/png",
+                ".jpg" or ".jpeg" => "image/jpeg",
+                ".ico" => "image/x-icon",
+                ".json" => "application/json",
+                ".webmanifest" => "application/manifest+json",
+                _ => "application/octet-stream"
+            };
+        }
     }
 }
