@@ -40,7 +40,7 @@ const App = () => {
         <div className="min-h-svh bg-background">
             <header className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur">
                 <div className="flex h-14 items-center justify-between px-6 lg:px-10">
-                    <Brand className="h-8 w-auto text-foreground" />
+                    <Brand className="h-8 w-auto text-[#0F1B2D] dark:text-foreground" />
                     <div className="flex items-center gap-3">
                         {me && (
                             <div
