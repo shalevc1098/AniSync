@@ -375,42 +375,13 @@ namespace Shoko.AniSync.Controllers
             string? result = null;
             try
             {
-                // Try to get API key from header (passed by JavaScript)
-                var apiKey = httpContext?.Request?.Headers["apikey"].FirstOrDefault();
-                if (!string.IsNullOrEmpty(apiKey))
-                {
-                    // Call Shoko's User/Current API synchronously to get the actual username
-                    var httpClient = _httpClientFactory.CreateClient();
-                    httpClient.DefaultRequestHeaders.Add("apikey", apiKey);
-
-                    try
-                    {
-                        using var response = httpClient.GetAsync($"{ShokoLocalUrl}/api/v3/User/Current").GetAwaiter().GetResult();
-                        if (response.IsSuccessStatusCode)
-                        {
-                            var content = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-                            var userData = Newtonsoft.Json.JsonConvert.DeserializeObject<dynamic>(content);
-                            if (userData?.Username != null)
-                            {
-                                result = userData.Username.ToString();
-                                _logger.LogDebug("Got username from API: {Username}", result);
-                            }
-                        }
-                    }
-                    catch (Exception apiEx)
-                    {
-                        _logger.LogWarning(apiEx, "Failed to call User/Current API");
-                    }
-                }
-
-                if (result == null)
-                {
-                    _logger.LogDebug("No user found, returning null");
-                }
+                // Resolve the user from the request (apikey) synchronously via Shoko - no HTTP round-trip.
+                if (httpContext != null)
+                    result = _userService?.GetUserFromHttpContext(httpContext)?.Username;
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to get current Shoko user, returning null");
+                _logger.LogWarning(ex, "Failed to resolve current Shoko user");
             }
 
             // Cache result (even null) for this request
@@ -609,7 +580,7 @@ namespace Shoko.AniSync.Controllers
         /// </summary>
         [HttpGet]
         [Route("api/dashboard")]
-        public IActionResult GetDashboardApi()
+        public async Task<IActionResult> GetDashboardApi()
         {
             var shokoUsername = GetCurrentShokoUser();
             if (string.IsNullOrEmpty(shokoUsername))
@@ -624,7 +595,7 @@ namespace Shoko.AniSync.Controllers
             {
                 try
                 {
-                    var userHistory = ShokoAniSyncPlugin.SyncHistory.GetUserStatsAsync(shokoUsername).GetAwaiter().GetResult();
+                    var userHistory = await ShokoAniSyncPlugin.SyncHistory.GetUserStatsAsync(shokoUsername);
                     if (userHistory != null)
                     {
                         syncedAnime = userHistory.History
@@ -641,12 +612,6 @@ namespace Shoko.AniSync.Controllers
                 }
             }
 
-            var accounts = config.GetAuthenticatedUsers()
-                .Select(u => u.ShokoUsername)
-                .Where(n => !string.IsNullOrEmpty(n))
-                .Distinct()
-                .ToList();
-
             return JsonCamel(new
             {
                 isAuthenticated,
@@ -656,8 +621,7 @@ namespace Shoko.AniSync.Controllers
                 syncedAnime,
                 totalAnime = syncedAnime,
                 lastSync,
-                pendingUpdates = 0,
-                accounts
+                pendingUpdates = 0
             });
         }
 

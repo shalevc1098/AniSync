@@ -63,7 +63,7 @@ const HistoryPage = () => {
         );
     }
 
-    const canLoadMore = data.history.length >= limit;
+    const canLoadMore = data.history.length >= limit && data.history.length < data.total_syncs;
 
     return (
         <Card>

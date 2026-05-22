@@ -39,7 +39,7 @@ const App = () => {
         <div className="min-h-svh bg-background">
             <header className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur">
                 <div className="flex h-14 items-center justify-between px-6 lg:px-10">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center">
                         <Logo className="size-7" />
                         <span className="text-lg font-semibold tracking-tight">
                             <span className="text-[#16C2E0]">Ani</span>

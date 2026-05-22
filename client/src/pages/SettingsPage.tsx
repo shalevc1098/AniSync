@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useForm } from "@tanstack/react-form";
+import { useEffect, useState } from "react";
+import { useForm, type AnyFieldApi } from "@tanstack/react-form";
 import { toast } from "sonner";
 import {
     useGlobalSettings,
@@ -98,6 +98,38 @@ const groups: { legend: string; toggles: Toggle[] }[] = [
     }
 ];
 
+// Controlled number input that keeps the raw text locally so mid-typing values
+// (e.g. "0." on the way to "0.5") aren't clobbered; commits only valid numbers.
+const NumberInput = ({
+    field,
+    ...props
+}: { field: AnyFieldApi } & React.ComponentProps<typeof Input>) => {
+    const [text, setText] = useState(String(field.state.value ?? ""));
+    useEffect(() => {
+        setText(String(field.state.value ?? ""));
+    }, [field.state.value]);
+
+    return (
+        <Input
+            {...props}
+            type="number"
+            value={text}
+            onChange={(e) => {
+                setText(e.target.value);
+                const v = e.target.valueAsNumber;
+                if (!Number.isNaN(v)) field.handleChange(v);
+            }}
+            onBlur={() => {
+                // If the field was left empty/half-typed, commit 0 and resync the display.
+                if (Number.isNaN(Number.parseFloat(text))) {
+                    field.handleChange(0);
+                    setText("0");
+                }
+            }}
+        />
+    );
+};
+
 const SettingsForm = ({ initial }: { initial: Settings }) => {
     const save = useSaveSettings();
     const form = useForm({
@@ -152,17 +184,13 @@ const SettingsForm = ({ initial }: { initial: Settings }) => {
                                             <FieldDescription>
                                                 How strict fuzzy matching is, between 0 and 1.
                                             </FieldDescription>
-                                            <Input
+                                            <NumberInput
+                                                field={field}
                                                 id={field.name}
-                                                type="number"
                                                 step="0.05"
                                                 min={0}
                                                 max={1}
                                                 className="max-w-40"
-                                                value={field.state.value}
-                                                onChange={(e) =>
-                                                    field.handleChange(e.target.valueAsNumber)
-                                                }
                                             />
                                             <FieldError errors={field.state.meta.errors} />
                                         </Field>
@@ -179,16 +207,12 @@ const SettingsForm = ({ initial }: { initial: Settings }) => {
                                             <FieldDescription>
                                                 Wait this long after a watch event before syncing.
                                             </FieldDescription>
-                                            <Input
+                                            <NumberInput
+                                                field={field}
                                                 id={field.name}
-                                                type="number"
                                                 min={0}
                                                 max={300}
                                                 className="max-w-40"
-                                                value={field.state.value}
-                                                onChange={(e) =>
-                                                    field.handleChange(e.target.valueAsNumber)
-                                                }
                                             />
                                             <FieldError errors={field.state.meta.errors} />
                                         </Field>
@@ -269,7 +293,7 @@ const ApiConfigForm = () => {
                 onClick={() =>
                     save.mutate(current, {
                         onSuccess: (r) => {
-                            setCreds(null); // fall back to refetched server values
+                            setCreds(current); // keep showing the saved values (no refetch flicker)
                             toast.success(
                                 r.reAuthRequired
                                     ? "Saved. Changed credentials cleared connections, please reconnect."

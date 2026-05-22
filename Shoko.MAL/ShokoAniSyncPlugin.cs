@@ -58,7 +58,11 @@ namespace Shoko.AniSync
         {
             var image = episode?.Series?.GetPreferredImageForType(ImageEntityType.Primary);
             if (image != null)
+                // The v3 image endpoint (/api/v3/Image/{source}/{type}/{id}) keys on the legacy
+                // integer id, so LocalID is required here despite being marked obsolete.
+#pragma warning disable CS0618
                 return $"/api/v3/Image/{image.Source}/{image.Type}/{image.LocalID}";
+#pragma warning restore CS0618
 
             return anime?.MainPicture?.Medium ?? anime?.MainPicture?.Large;
         }
@@ -550,18 +554,19 @@ namespace Shoko.AniSync
                                         details = "Set start date";
                                 }
 
-                                SyncHistory?.LogSync(
-                                    shokoUser?.Username ?? "Unknown User",
-                                    anime.Id,
-                                    anime.Title ?? "Unknown",
-                                    shokoEpisodeNumber,
-                                    SyncActionHelper.GetActionText(syncAction),
-                                    true,
-                                    statusToUse,
-                                    provider.ToString(),
-                                    GetEpisodeThumbnailUrl(maxEpisode, anime),
-                                    userAuth?.Username ?? "Unknown User"
-                                );
+                                if (SyncHistory != null)
+                                    await SyncHistory.LogSyncAsync(
+                                        shokoUser?.Username ?? "Unknown User",
+                                        anime.Id,
+                                        anime.Title ?? "Unknown",
+                                        shokoEpisodeNumber,
+                                        SyncActionHelper.GetActionText(syncAction),
+                                        true,
+                                        statusToUse,
+                                        provider.ToString(),
+                                        GetEpisodeThumbnailUrl(maxEpisode, anime),
+                                        userAuth?.Username ?? "Unknown User"
+                                    );
                             }
                             else
                             {
@@ -615,18 +620,19 @@ namespace Shoko.AniSync
                                     ? "First time completion"
                                     : null;
 
-                                SyncHistory?.LogSync(
-                                    shokoUser?.Username ?? "Unknown User",
-                                    anime.Id,
-                                    anime.Title ?? "Unknown",
-                                    shokoEpisodeNumber,
-                                    SyncActionHelper.GetActionText(syncAction),
-                                    true,
-                                    newStatus,
-                                    provider.ToString(),
-                                    GetEpisodeThumbnailUrl(maxEpisode, anime),
-                                    userAuth?.Username ?? "Unknown User"
-                                );
+                                if (SyncHistory != null)
+                                    await SyncHistory.LogSyncAsync(
+                                        shokoUser?.Username ?? "Unknown User",
+                                        anime.Id,
+                                        anime.Title ?? "Unknown",
+                                        shokoEpisodeNumber,
+                                        SyncActionHelper.GetActionText(syncAction),
+                                        true,
+                                        newStatus,
+                                        provider.ToString(),
+                                        GetEpisodeThumbnailUrl(maxEpisode, anime),
+                                        userAuth?.Username ?? "Unknown User"
+                                    );
                             }
                             else
                             {

@@ -191,7 +191,18 @@ namespace Shoko.AniSync.Helpers
             await _fileLock.WaitAsync();
             try
             {
-                return _userHistories.TryGetValue(username, out var userHistory) ? userHistory : null;
+                if (!_userHistories.TryGetValue(username, out var userHistory))
+                    return null;
+
+                // Snapshot under the lock - callers enumerate this after the lock is released,
+                // and a concurrent watch event mutates the live History list.
+                return new UserHistory
+                {
+                    History = userHistory.History.ToList(),
+                    LastSync = userHistory.LastSync,
+                    TotalSyncs = userHistory.TotalSyncs,
+                    FailedSyncs = userHistory.FailedSyncs
+                };
             }
             finally
             {
@@ -246,38 +257,41 @@ namespace Shoko.AniSync.Helpers
         /// <summary>
         /// LogSync method that uses the new format
         /// </summary>
-        public void LogSync(string username, int? animeId, string animeTitle, int episodeNumber, 
+        public Task LogSyncAsync(string username, int? animeId, string animeTitle, int episodeNumber,
             string action, bool success, Status status, string providerName = "MAL", string? animeImage = null, string? providerUsername = null)
         {
-            var syncAction = SyncActionHelper.ParseAction(action);
-            
             var entry = new HistoryEntry
             {
                 Timestamp = DateTime.Now,
-                Action = (int)syncAction,
+                Action = (int)SyncActionHelper.ParseAction(action),
                 AnimeId = animeId,
                 AnimeTitle = animeTitle,
                 AnimeImage = animeImage,
                 EpisodeNumber = episodeNumber,
                 Status = (int)status,
                 Success = success,
-                Provider = new ProviderInfo 
-                { 
+                Provider = new ProviderInfo
+                {
                     Name = providerName,
                     Username = providerUsername
                 }
             };
+            return AddEntryAsync(username, entry);
+        }
 
+        public void LogSync(string username, int? animeId, string animeTitle, int episodeNumber,
+            string action, bool success, Status status, string providerName = "MAL", string? animeImage = null, string? providerUsername = null)
+        {
             // Fire and forget - don't wait for the save
             _ = Task.Run(async () =>
             {
                 try
                 {
-                    await AddEntryAsync(username, entry);
+                    await LogSyncAsync(username, animeId, animeTitle, episodeNumber, action, success, status, providerName, animeImage, providerUsername);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to save sync history entry for {AnimeTitle}", entry.AnimeTitle);
+                    _logger.LogError(ex, "Failed to save sync history entry for {AnimeTitle}", animeTitle);
                 }
             });
         }

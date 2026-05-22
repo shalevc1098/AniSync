@@ -76,7 +76,7 @@ namespace Shoko.AniSync.Api
                     var cacheKey = $"pkce_{state ?? "default"}";
                     _memoryCache.Set(cacheKey, codeChallenge, TimeSpan.FromMinutes(10));
 
-                    var url = $"{_authApiUrl}/authorize?response_type=code&client_id={_providerApiAuth.ClientId}&code_challenge={codeChallenge}&redirect_uri={_redirectUrl}";
+                    var url = $"{_authApiUrl}/authorize?response_type=code&client_id={_providerApiAuth.ClientId}&code_challenge={codeChallenge}&redirect_uri={Uri.EscapeDataString(_redirectUrl)}";
                     if (!string.IsNullOrEmpty(state))
                     {
                         url += $"&state={Uri.EscapeDataString(state)}";

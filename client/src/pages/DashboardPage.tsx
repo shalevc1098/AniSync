@@ -24,7 +24,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 const RecentActivity = () => {
     const { data, isLoading, isError } = useHistory(6);
     const apiKey = useAuthStore((s) => s.apiKey);
-    useNow();
     const thumb = (path: string | null) =>
         path
             ? `${path}${path.includes("?") ? "&" : "?"}apikey=${encodeURIComponent(apiKey)}`

@@ -19,8 +19,7 @@ export const DashboardSchema = z.object({
     syncedAnime: z.number(),
     totalAnime: z.number(),
     lastSync: z.string().nullable(),
-    pendingUpdates: z.number(),
-    accounts: z.array(z.string())
+    pendingUpdates: z.number()
 });
 
 export const SettingsSchema = z.object({
