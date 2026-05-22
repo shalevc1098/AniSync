@@ -15,8 +15,10 @@
     </ItemGroup>
     
     <ItemGroup>
-        <!-- Embed HTML files as resources in the DLL -->
-        <EmbeddedResource Include="wwwroot\**\*.html" />
+        <!-- Embed the built SPA; LogicalName keeps a stable "app/<path>" lookup key. -->
+        <EmbeddedResource Include="wwwroot\app\**\*">
+            <LogicalName>app/%(RecursiveDir)%(Filename)%(Extension)</LogicalName>
+        </EmbeddedResource>
     </ItemGroup>
     
 
