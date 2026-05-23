@@ -645,7 +645,7 @@ namespace AniSync
                 if (shokoUser == null || series == null) return;
                 if (!e.UserData.HasUserRating) return;
 
-                int score = (int)Math.Clamp(Math.Round((double)e.UserData.UserRating), 0, 10);
+                int score = RatingHelpers.NormalizeRating((double)e.UserData.UserRating);
                 _logger.LogInformation("Series rating event: {Title} = {Score}/10 for user {User}",
                     series.Title ?? "Unknown", score, shokoUser.Username);
 
