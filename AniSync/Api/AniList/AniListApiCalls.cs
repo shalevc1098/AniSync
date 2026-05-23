@@ -124,7 +124,10 @@ namespace AniSync.Api
             if (endDate != null)
                 variables["completedAt"] = ToFuzzyDateInput(endDate.Value);
 
-            const string gql = "mutation ($mediaId: Int, $progress: Int, $status: MediaListStatus, $repeat: Int, $startedAt: FuzzyDateInput, $completedAt: FuzzyDateInput) { SaveMediaListEntry(mediaId: $mediaId, progress: $progress, status: $status, repeat: $repeat, startedAt: $startedAt, completedAt: $completedAt) { id status progress repeat } }";
+            if (score != null)
+                variables["score"] = (double)score.Value;
+
+            const string gql = "mutation ($mediaId: Int, $progress: Int, $status: MediaListStatus, $repeat: Int, $startedAt: FuzzyDateInput, $completedAt: FuzzyDateInput, $score: Float) { SaveMediaListEntry(mediaId: $mediaId, progress: $progress, status: $status, repeat: $repeat, startedAt: $startedAt, completedAt: $completedAt, score: $score) { id status progress repeat score } }";
             using var doc = await PostGraphQl(gql, variables, shokoUsername);
             if (doc == null) return null;
             if (!doc.RootElement.TryGetProperty("data", out var data) || !data.TryGetProperty("SaveMediaListEntry", out var entry) || entry.ValueKind != JsonValueKind.Object)

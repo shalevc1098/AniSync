@@ -30,7 +30,10 @@ namespace AniSync.Models
         Updated = 7,
         
         [Description("Failed")]
-        Failed = 8
+        Failed = 8,
+
+        [Description("Rated")]
+        Rated = 9
     }
     
     /// <summary>
@@ -53,6 +56,7 @@ namespace AniSync.Models
                 SyncAction.AddedToList => "Added to list",
                 SyncAction.Updated => "Updated",
                 SyncAction.Failed => "Failed",
+                SyncAction.Rated => "Rated",
                 _ => "Unknown"
             };
         }
@@ -85,6 +89,7 @@ namespace AniSync.Models
                 "add to list" or "added to list" => SyncAction.AddedToList,
                 "updated" => SyncAction.Updated,
                 "failed" => SyncAction.Failed,
+                "rated" => SyncAction.Rated,
                 _ => SyncAction.Updated
             };
         }

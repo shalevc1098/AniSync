@@ -634,16 +634,119 @@ namespace AniSync
                 }
         }
 
+        private async void OnSeriesUserDataSavedAsync(object? sender, SeriesUserDataSavedEventArgs e)
+        {
+            try
+            {
+                if (!e.Reason.HasFlag(SeriesUserDataSaveReason.UserRating)) return;
+                if (e.IsImport) return;
+                var shokoUser = e.User;
+                var series = e.Series;
+                if (shokoUser == null || series == null) return;
+                if (!e.UserData.HasUserRating) return;
+
+                int score = (int)Math.Clamp(Math.Round((double)e.UserData.UserRating), 0, 10);
+                _logger.LogInformation("Series rating event: {Title} = {Score}/10 for user {User}",
+                    series.Title ?? "Unknown", score, shokoUser.Username);
+
+                var config = _configProvider.Load();
+                var providers = config.GetConnectedProviders(shokoUser.Username!);
+                if (providers.Count == 0)
+                {
+                    _logger.LogDebug("No provider accounts for Shoko user {User}, skipping rating sync", shokoUser.Username);
+                    return;
+                }
+
+                var anidbId = series.AnidbAnimeID;
+                var offlineKey = $"offlinedb_{anidbId}";
+                if (!_memoryCache.TryGetValue(offlineKey, out AnimeOfflineDatabaseHelpers.OfflineDatabaseResponse? offlineDbIds))
+                {
+                    offlineDbIds = await AnimeOfflineDatabaseHelpers.GetProviderIdsFromMetadataProvider(
+                        _httpClientFactory.CreateClient(), anidbId, AnimeOfflineDatabaseHelpers.Source.Anidb);
+                    _memoryCache.Set(offlineKey, offlineDbIds, TimeSpan.FromHours(1));
+                }
+
+                var eventId = Guid.NewGuid().ToString();
+                foreach (var syncProvider in providers)
+                {
+                    try
+                    {
+                        await SyncRatingToProviderAsync(syncProvider, shokoUser, series, score, offlineDbIds, eventId);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Rating sync to {Provider} failed for user {User}", syncProvider, shokoUser.Username);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing series rating event");
+            }
+        }
+
+        private async Task SyncRatingToProviderAsync(ApiName provider, IUser shokoUser, IShokoSeries series, int score, AnimeOfflineDatabaseHelpers.OfflineDatabaseResponse? offlineDbIds, string eventId)
+        {
+            var config = _configProvider.Load();
+            UserApiAuth? userAuth = config.GetAuthForShokoUser(shokoUser.Username!, provider);
+            if (userAuth == null)
+            {
+                _logger.LogDebug("No {Provider} account for Shoko user {Username}, skipping rating sync", provider, shokoUser.Username);
+                return;
+            }
+
+            IApiCallHelpers? apiCallHelpers = ProviderApiFactory.Create(provider, _httpClientFactory, _loggerFactory, _memoryCache, _configProvider, _applicationPaths);
+            if (apiCallHelpers == null)
+            {
+                _logger.LogWarning("Provider {Provider} is not supported, skipping rating sync", provider);
+                return;
+            }
+
+            var providerId = provider == ApiName.AniList ? offlineDbIds?.Anilist : offlineDbIds?.Mal;
+            if (providerId == null)
+            {
+                _logger.LogWarning("No {Provider} ID for series {Title}, skipping rating sync", provider, series.Title ?? "Unknown");
+                return;
+            }
+
+            var anime = await apiCallHelpers.GetAnime(providerId.Value, shokoUsername: shokoUser.Username);
+            if (anime == null)
+            {
+                _logger.LogWarning("Could not load {Provider} anime {Id} for rating sync", provider, providerId);
+                return;
+            }
+
+            if (anime.MyListStatus == null)
+            {
+                _logger.LogDebug("{Title} is not on the {Provider} list, skipping rating sync", series.Title ?? "Unknown", provider);
+                return;
+            }
+            int currentProgress = anime.MyListStatus.NumEpisodesWatched;
+            Status currentStatus = anime.MyListStatus.Status;
+            var resp = await apiCallHelpers.UpdateAnime(anime.Id, currentProgress, currentStatus, score: score, shokoUsername: shokoUser.Username);
+            if (resp != null)
+            {
+                _logger.LogInformation("Synced rating {Score}/10 for {Title} to {Provider}", score, series.Title ?? "Unknown", provider);
+                await SyncHistory.LogSyncAsync(shokoUser.Username!, anime.Id, anime.Title ?? series.Title ?? "Unknown", 0, "Rated", true, resp.Status, provider.ToString(), null, userAuth.Username, eventId);
+            }
+            else
+            {
+                _logger.LogWarning("Rating update returned null for {Title} on {Provider}", series.Title ?? "Unknown", provider);
+            }
+        }
+
         Task IHostedService.StartAsync(CancellationToken cancellationToken)
         {
             _userDataService.EpisodeUserDataSaved += OnEpisodeWatchedAsync;
-            _logger.LogInformation("AniSync plugin started - listening for episode watch events");
+            _userDataService.SeriesUserDataSaved += OnSeriesUserDataSavedAsync;
+            _logger.LogInformation("AniSync plugin started - listening for episode watch and series rating events");
             return Task.CompletedTask;
         }
 
         Task IHostedService.StopAsync(CancellationToken cancellationToken)
         {
             _userDataService.EpisodeUserDataSaved -= OnEpisodeWatchedAsync;
+            _userDataService.SeriesUserDataSaved -= OnSeriesUserDataSavedAsync;
             return Task.CompletedTask;
         }
     }
